@@ -59,7 +59,7 @@ function dot(x, y, r, fill = ACC, sx = 1, sy = 1) {
 function maskWord(str, x, y, size, weight, color, tIn, tOut, t, opts = {}) {
   const stag = opts.stagger ?? 0.055, align = opts.align ?? "center", track = opts.track ?? 0;
   ctx.font = F(weight, size);
-  const chars = [...str], widths = chars.map(c => ctx.measureText(c).width);
+  const chars = [...str], widths = chars.map(c => ctx.measureText(c).width * (c === ' ' && opts.thin ? 0.4 : 1));
   const total = widths.reduce((a, b) => a + b, 0) + track * (chars.length - 1);
   let x0 = align === "center" ? x - total / 2 : align === "right" ? x - total : x;
   const asc = size * 0.78, desc = size * 0.26;
@@ -83,16 +83,16 @@ function textWidth(str, size, weight) { ctx.font = F(weight, size); return ctx.m
 // 9:16 safe zone: every word sits inside y 420..1500.
 const UP = CY - 240;            // dot rest position above the word
 const WORD_Y = CY + 70;         // baseline of the big words
-const BAR_Y = CY + 260, BAR_X0 = 110, BAR_X1 = 970;
+const BAR_Y = CY + 360, BAR_X0 = 110, BAR_X1 = 970;
 const GRID = 3, CELL = 210, GAP = 36, GY = CY - 90, RAD = 16;
 const LEFT = 96;                // end card margin (flush left)
 const reach = (x, y) => Math.max(Math.hypot(x, y), Math.hypot(W - x, y), Math.hypot(x, H - y), Math.hypot(W - x, H - y)) * 1.05;
 
 // the dot's path through shots 2-3, continuous across the handoff
 function dotPath(t, xr) {
-  const back = sp(t, 3.42, S_UI);                  // remnant -> parked top right, clear of DESIGN
-  const go = sp(t, 4.32, S_BOX);                   // parked -> centre, already moving when the flood starts
-  const ax = xr - 62, ay = WORD_Y - 80, bx = CX + 330, by = UP;
+  const back = sp(t, 3.12, S_UI);                  // remnant -> parked top right, clear of DESIGN
+  const go = sp(t, 4.45, S_BOX);                   // parked -> centre, already moving when the flood starts
+  const ax = xr - 62, ay = UP, bx = CX + 400, by = UP - 40;
   return [lerp(lerp(ax, bx, back), CX, go), lerp(lerp(ay, by, back), CY, go), back];
 }
 
@@ -104,53 +104,54 @@ window.seek = async (t) => {
   ctx.translate(CX, CY); ctx.scale(cam, cam); ctx.translate(-CX, -CY);
 
   // ===== 1. HOOK (0 - 2.4): the dot falls under gravity, lands, lifts; MOTION rises =====
-  if (t < 2.4) {
-    const f = prog(t, -0.05, 0.36);
+  if (t < 2.1) {
+    const f = prog(t, -0.15, 0.36);
     let y = lerp(-140, CY, f * f);                 // accelerating fall, impact at full speed
     const land = Math.max(0, t - 0.36);
     const squash = t > 0.36 ? Math.exp(-land * 15) * Math.sin(land * 14) * 1.6 : 0;   // damping ratio ~0.73
-    y = lerp(y, UP, sp(t, 0.62, S_BOX));
+    y = lerp(y, UP, sp(t, 0.52, S_BOX));
     dot(CX, y, 62, ACC, 1 + 0.22 * squash, 1 - 0.22 * squash);
     maskWord("MOTION", CX, WORD_Y, 218, 800, INK, 0.9, null, t, { track: -6 });
   }
 
   // ===== 2. DESIGN (2.4 - 4.55): the dot stretches into a bar that wipes MOTION into DESIGN =====
   let xr = CX + 450;
-  if (t >= 2.4 && t < 4.55) {
-    const s = sp(t, 2.4, S_UI);
-    const cover = io(prog(t, 2.70, 3.05));
-    const ret = io(prog(t, 3.10, 3.42));
-    if (t < 3.07) maskWord("MOTION", CX, WORD_Y, 218, 800, INK, -9, null, t, { track: -6 });
+  if (t >= 2.1 && t < 4.67) {
+    const s = sp(t, 2.1, S_UI);
+    const cover = io(prog(t, 2.40, 2.75));
+    const ret = io(prog(t, 2.80, 3.12));
+    if (t < 2.77) maskWord("MOTION", CX, WORD_Y, 218, 800, INK, -9, null, t, { track: -6 });
     else maskWord("DESIGN", CX, WORD_Y, 218, 800, INK, -9, 4.22, t, { track: -6, stagger: 0.035 });
     let w = lerp(124, 900, s), h = lerp(124, 26, s);
     const cy = lerp(UP, WORD_Y - 80, cover); h = lerp(h, 270, cover);
     let x = CX - w / 2; xr = CX + w / 2;
     x = lerp(x, xr - 124, ret); h = lerp(h, 124, ret);
-    if (t < 3.42) rrect(x, cy - h / 2, xr - x, h, h / 2, ACC);
+    const cyR = lerp(cy, UP, ret);                     // the pill lifts off the word while it retracts
+    if (t < 3.12) rrect(x, cyR - h / 2, xr - x, h, h / 2, ACC);
     else { const [px, py] = dotPath(t, xr); dot(px, py, 62); }
   }
 
   // ===== 3. FLOOD (4.55 - 7.3): the moving dot floods the frame, "100%" / "code", contracts to a cell =====
-  if (t >= 4.55 && t < 7.32) {
+  if (t >= 4.67 && t < 7.23) {
     const [px, py] = dotPath(t, CX + 450);
-    const g = io(prog(t, 4.55, 5.05));
-    const shrink = io(prog(t, 6.85, 7.30));
+    const g = io(prog(t, 4.67, 5.17));
+    const shrink = io(prog(t, 6.76, 7.21));
     let size = lerp(124, reach(px, py) * 2, g);
     size = lerp(size, CELL, shrink);
     const cx = lerp(px, CX, shrink), cy = lerp(py, GY, shrink);
     const cr = lerp(size / 2, RAD, shrink);
     rrect(cx - size / 2, cy - size / 2, size, size, cr, ACC);
-    maskWord("100%", CX, CY - 20, 300, 800, INK, 5.15, 6.45, t, { track: -10, exitUp: true });
-    maskWord("code", CX, CY + 170, 130, 700, INK, 5.38, 6.55, t, { stagger: 0.04, exitUp: true });
+    maskWord("100 %", CX, CY - 20, 300, 800, INK, 5.2, 6.45, t, { track: -10, exitUp: true, thin: true });
+    maskWord("code", CX, CY + 170, 130, 700, INK, 5.42, 6.55, t, { stagger: 0.04, exitUp: true });
   }
 
   // ===== 4. RHYTHM (7.3 - 10.05): the cell splits into a 3x3 grid, two waves, merges into the track =====
-  if (t >= 7.32 && t < 10.05) {
+  if (t >= 7.23 && t < 10.05) {
     const merge = io(prog(t, 9.65, 10.05));
     const sl = (BAR_X1 - BAR_X0 + 26) / 9;
     for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
       const i = r * GRID + c, dc = c - 1, dr = r - 1, ring = Math.max(Math.abs(dc), Math.abs(dr));
-      const split = sp(t, 7.32 + ring * 0.06, S_BOX);
+      const split = sp(t, 7.23 + ring * 0.06, S_BOX);
       const gx = CX + dc * (CELL + GAP) * split, gy = GY + dr * (CELL + GAP) * split;
       const w1 = 8.38 + (r + c) * 0.07, w2 = 8.92 + (4 - r - c) * 0.07;
       const rot = (sp(t, w1, S_UI) + sp(t, w2, S_UI)) * Math.PI / 2;
@@ -165,16 +166,16 @@ window.seek = async (t) => {
   }
 
   // ===== 5. TIMING (10.05 - 12.1): the bar becomes a track, the knob runs as the easing curve draws =====
-  if (t >= 10.05 && t < 12.1) {
+  if (t >= 10.05 && t < 11.8) {
     const toTrack = io(prog(t, 10.05, 10.35));
-    const run = io(prog(t, 10.45, 11.55));
-    const fade = io(prog(t, 11.80, 12.10));
+    const run = io(prog(t, 10.50, 11.50));
+    const fade = io(prog(t, 11.50, 11.80));
     const kx = lerp(BAR_X0, BAR_X1, run);
     ctx.save(); ctx.globalAlpha = 1 - fade;
     rrect(BAR_X0 - 13, BAR_Y - 13, BAR_X1 - BAR_X0 + 26, 26, 13, mix(ACC, TRACK, toTrack));
     if (toTrack > 0) rrect(BAR_X0 - 13, BAR_Y - 13, kx - BAR_X0 + 26, 26, 13, ACC);
     // easing curve, same width as the track, drawn by the same eased progress
-    const by0 = CY + 140, by1 = CY - 340;
+    const by0 = CY + 240, by1 = CY - 240;
     ctx.lineWidth = 8; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = INK;
     ctx.beginPath();
     const N = 160;
@@ -182,25 +183,25 @@ window.seek = async (t) => {
       const u = j / N, px = lerp(BAR_X0, BAR_X1, u), py = lerp(by0, by1, io(u));
       j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
     }
-    if (run > 0) ctx.stroke();
+    if (run > 0.04) ctx.stroke();
     ctx.restore();
-    maskWord("timing", CX, CY - 440, 120, 700, INK, 10.25, 11.70, t, { stagger: 0.035, exitUp: true });
-    const kr = lerp(13, 40, sp(t, 10.35, S_UI));
-    if (t < 11.62) dot(kx, BAR_Y, kr);
+    maskWord("timing", CX, CY - 340, 120, 700, INK, 10.05, 11.28, t, { stagger: 0.035, exitUp: true });
+    const kr = lerp(13, 40, sp(t, 10.42, S_UI));
+    if (t < 11.50) dot(kx, BAR_Y, kr);
   }
 
   // ===== 6. SIGNATURE (11.62 - 15): the knob is thrown into the full stop of the name, flush left =====
-  if (t >= 11.62) {
-    const NAME1 = "Ousseynou", NAME2 = "Faye", SZ = 172;
+  if (t >= 11.50) {
+    const NAME1 = "Ousseynou", NAME2 = "Faye", SZ = 160;
     const w2 = textWidth(NAME2, SZ, 800) - 3 * 4;
-    const y1 = CY - 40, y2 = CY + 135;
-    maskWord(NAME1, LEFT, y1, SZ, 800, INK, 11.95, null, t, { track: -4, stagger: 0.04, align: "left" });
-    maskWord(NAME2, LEFT, y2, SZ, 800, INK, 12.05, null, t, { track: -4, stagger: 0.05, align: "left" });
-    const px = LEFT + w2 + 34, py = y2 - 17;
-    const go = sp(t, 11.62, [120, 20]);
+    const y1 = CY - 100, y2 = CY + 65;
+    maskWord(NAME1, LEFT, y1, SZ, 800, INK, 11.62, null, t, { track: -4, stagger: 0.04, align: "left" });
+    maskWord(NAME2, LEFT, y2, SZ, 800, INK, 11.70, null, t, { track: -4, stagger: 0.05, align: "left" });
+    const px = LEFT + w2 + 32, py = y2 - 16;
+    const go = sp(t, 11.50, [120, 20]);
     const arc = Math.sin(Math.PI * clamp(go)) * -140;
-    dot(lerp(BAR_X1, px, go), lerp(BAR_Y, py, go) + arc, lerp(40, 19, out(go)));
-    maskWord("motion designer", LEFT + 4, CY + 300, 76, 600, INK, 13.0, null, t, { stagger: 0.02, align: "left" });
+    dot(lerp(BAR_X1, px, go), lerp(BAR_Y, py, go) + arc, lerp(40, 18, go * go));
+    maskWord("motion designer", LEFT + 4, CY + 225, 76, 600, INK, 12.45, null, t, { stagger: 0.02, align: "left" });
   }
   return true;
 };
