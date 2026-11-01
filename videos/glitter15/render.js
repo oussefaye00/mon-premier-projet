@@ -8,7 +8,7 @@ const path = require("path"), fs = require("fs");
   fs.mkdirSync(dir, { recursive: true });
   const br = await chromium.launch({ args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--disable-threaded-animation", "--run-all-compositor-stages-before-draw", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const p = await br.newPage({ viewport: { width: 1080, height: 1920 } });
-  await p.goto("file://" + path.resolve(__dirname, "film.html"));
+  await p.goto(process.env.FILM_URL || "file://" + path.resolve(__dirname, "film.html"));
   await p.waitForFunction(() => window.ready === true);
   await p.evaluate(() => {
     const c = document.getElementById("c"), ctx = c.getContext("2d", { willReadFrequently: true });
@@ -36,7 +36,10 @@ const path = require("path"), fs = require("fs");
   });
   for (let f = +a; f < +b; f++) {
     const times = [];
-    const tf = f / FPS, n = SUB > 1 && ((tf > 9.1 && tf < 9.5) || (tf > 4.55 && tf < 5.2)) ? 16 : SUB; // dense samples on the flood + contraction
+    const tf = f / FPS;
+    const fast3d = (tf > 4.2 && tf < 4.95) || (tf > 5.1 && tf < 5.6) || (tf > 8.98 && tf < 9.5);   // phone moves fast: full blur
+    const slow3d = tf >= 4.95 && tf <= 8.98 && !fast3d;                                                // phone mostly still: 2 samples
+    const n = SUB === 1 ? 1 : fast3d ? 6 : slow3d ? 2 : SUB;
     for (let s = 0; s < n; s++) times.push((f + (n === 1 ? 0 : (s / n - 0.5) * SHUTTER)) / FPS);
     const url = await p.evaluate(([ts, sc]) => window.frame(ts.map(x => Math.max(0, x)), sc), [times, SCALE]);
     fs.writeFileSync(`${dir}/f${String(f).padStart(5, "0")}.png`, Buffer.from(url.split(",")[1], "base64"));
