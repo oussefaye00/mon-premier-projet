@@ -1,5 +1,25 @@
 # Consignes pour Claude
 
+## Nouveaux skills : toujours les combiner et les rendre complémentaires
+
+Quand l'utilisateur ajoute un nouveau skill (dépôt GitHub, lien, fichier) :
+
+1. L'installer dans `.claude/skills/<nom>/` (sans `.git` ni `.github`), puis le commiter.
+2. Le lire en entier et repérer les skills déjà présents qui touchent au même domaine
+   (ceux de `.claude/skills/` et ceux de la session).
+3. Lui attribuer un **rôle distinct** à côté d'eux, sans doublon : qui produit, qui
+   fixe les règles, qui vérifie, etc. Si deux skills se recouvrent, garder le meilleur
+   sur ce point et ne reprendre de l'autre que ce qu'il apporte en plus.
+4. Si deux skills imposent des outils différents (par exemple deux moteurs de rendu),
+   n'en garder qu'un comme moteur et ne reprendre de l'autre que ses règles et méthodes.
+5. Mettre à jour ce fichier : ajouter le skill au tableau du domaine concerné, ou
+   créer une nouvelle section avec son propre tableau de rôles.
+6. Expliquer à l'utilisateur, en quelques lignes, le rôle de chaque skill et les
+   limites de la combinaison.
+
+Ensuite, utiliser **ensemble** tous les skills d'un même domaine pour chaque demande
+de ce domaine. En cas de conflit entre deux règles, la plus exigeante l'emporte.
+
 ## Vidéos : toujours combiner les trois skills
 
 Pour toute demande de vidéo (promo, plan animé, motion design), utiliser **à chaque fois**
