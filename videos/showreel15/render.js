@@ -36,7 +36,8 @@ const path = require("path"), fs = require("fs");
   });
   for (let f = +a; f < +b; f++) {
     const times = [];
-    for (let s = 0; s < SUB; s++) times.push((f + (SUB === 1 ? 0 : (s / SUB - 0.5) * SHUTTER)) / FPS);
+    const tf = f / FPS, n = SUB > 1 && ((tf > 4.5 && tf < 5.15) || (tf > 6.8 && tf < 7.4)) ? 16 : SUB; // dense samples on the flood + contraction
+    for (let s = 0; s < n; s++) times.push((f + (n === 1 ? 0 : (s / n - 0.5) * SHUTTER)) / FPS);
     const url = await p.evaluate(([ts, sc]) => window.frame(ts.map(x => Math.max(0, x)), sc), [times, SCALE]);
     fs.writeFileSync(`${dir}/f${String(f).padStart(5, "0")}.png`, Buffer.from(url.split(",")[1], "base64"));
   }

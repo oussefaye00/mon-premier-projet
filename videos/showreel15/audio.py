@@ -60,41 +60,41 @@ def chime(dur=1.6):
     return s * env(n, 0.003)
 
 
-# --- 1. hook
-add(0.40, thump(), 0.55)
-add(0.95, whoosh(0.3, 400, 2500), 0.10)
-for i in range(6): add(1.2 + i * 0.055 + 0.08, tick(2000 + i * 120), 0.10, -0.4 + i * 0.16)
+# --- 1. hook (timings follow film.html v2)
+add(0.35, thump(), 0.55)
+add(0.62, whoosh(0.3, 400, 2500), 0.10)
+for i in range(6): add(0.9 + i * 0.055 + 0.08, tick(2000 + i * 120), 0.10, -0.4 + i * 0.16)
 # --- 2. wipe
-add(2.45, pop(300, 700, 0.09), 0.25)
-add(2.92, whoosh(0.42, 250, 2200), 0.22)
-add(3.38, whoosh(0.5, 600, 5000), 0.24, 0.3)
-add(3.95, pop(500, 1100), 0.25, 0.5)
-add(4.33, whoosh(0.4, 200, 1500), 0.12)
+add(2.40, pop(300, 700, 0.09), 0.25)
+add(2.68, whoosh(0.4, 250, 2200), 0.22)
+add(3.07, whoosh(0.4, 600, 5000), 0.24, 0.3)
+add(3.42, pop(500, 1100), 0.25, 0.5)
+add(4.22, whoosh(0.25, 400, 3000), 0.12)
 # --- 3. flood
-add(4.85, whoosh(0.42, 150, 4000, rise=True), 0.35)
-add(5.24, thump(0.6, 110, 34), 0.75)
-add(5.24, whoosh(0.25, 2000, 9000), 0.10)
-add(5.36, tick(1800), 0.18); add(5.66, tick(2200), 0.15)
-add(6.75, whoosh(0.35, 400, 3000), 0.14)
-add(6.95, whoosh(0.5, 200, 2000), 0.18)
+add(4.40, whoosh(0.62, 150, 4000, rise=True), 0.35)
+add(5.02, thump(0.6, 110, 34), 0.75)
+add(5.02, whoosh(0.25, 2000, 9000), 0.10)
+add(5.17, tick(1800), 0.18); add(5.40, tick(2200), 0.15)
+add(6.45, whoosh(0.25, 400, 3000), 0.14)
+add(6.85, whoosh(0.45, 200, 2000), 0.18)
 # --- 4. rhythm
-for ring in range(2): add(7.55 + ring * 0.06, pop(380 + ring * 120, 900 + ring * 200), 0.22)
-add(8.07, tick(2100), 0.12)
+for ring in range(2): add(7.32 + ring * 0.06, pop(380 + ring * 120, 900 + ring * 200), 0.22)
+add(8.00, tick(2100), 0.12)
 for k in range(5):
-    add(8.27 + k * 0.07, tick(1500 + k * 260, 0.035), 0.20, -0.6 + k * 0.3)
-    add(8.87 + (4 - k) * 0.07, tick(2600 - k * 220, 0.035), 0.18, 0.6 - k * 0.3)
-add(9.42, whoosh(0.5, 300, 3000), 0.20)
+    add(8.40 + k * 0.07, tick(1500 + k * 260, 0.035), 0.20, -0.6 + k * 0.3)
+    add(8.94 + (4 - k) * 0.07, tick(2600 - k * 220, 0.035), 0.18, 0.6 - k * 0.3)
+add(9.45, whoosh(0.25, 400, 3000), 0.10)
+add(9.62, whoosh(0.45, 300, 3000), 0.20)
 # --- 5. timing
 add(10.27, tick(2300), 0.14)
-run = sweep(220, 660, 1.2, 1.0) * np.sin(np.pi * np.linspace(0, 1, int(1.2 * SR))) ** 2
-add(10.55, run, 0.07)
-add(11.17, tick(2600), 0.14)
-add(11.95, whoosh(0.4, 300, 2500), 0.12)
+run = sweep(220, 660, 1.1, 1.0) * np.sin(np.pi * np.linspace(0, 1, int(1.1 * SR))) ** 2
+add(10.45, run, 0.07)
+add(11.70, whoosh(0.25, 400, 3000), 0.10)
 # --- 6. signature
-add(12.08, whoosh(0.55, 300, 4000), 0.20, 0.2)
-add(12.62, thump(0.5, 160, 60), 0.40)
-for i in range(9): add(12.5 + i * 0.04 + 0.06, tick(2400, 0.02), 0.06, -0.5 + i * 0.12)
-add(13.25, chime(), 0.30)
+add(11.62, whoosh(0.55, 300, 4000), 0.20, 0.2)
+for i in range(9): add(11.95 + i * 0.04 + 0.06, tick(2400, 0.02), 0.06, -0.5 + i * 0.12)
+add(12.22, thump(0.5, 160, 60), 0.40)
+add(13.0, chime(), 0.30)
 
 # tail fade
 fade = int(0.6 * SR); mix[-fade:] *= np.linspace(1, 0, fade)[:, None]
