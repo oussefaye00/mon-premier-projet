@@ -6,7 +6,7 @@ const path = require("path"), fs = require("fs");
   const [dir, a, b, fpsS = "60", subS = "6", scaleS = "1"] = process.argv.slice(2);
   const FPS = +fpsS, SUB = +subS, SHUTTER = 0.5, SCALE = +scaleS;
   fs.mkdirSync(dir, { recursive: true });
-  const br = await chromium.launch({ args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--disable-threaded-animation", "--run-all-compositor-stages-before-draw"] });
+  const br = await chromium.launch({ args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--disable-threaded-animation", "--run-all-compositor-stages-before-draw", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const p = await br.newPage({ viewport: { width: 1080, height: 1920 } });
   await p.goto("file://" + path.resolve(__dirname, "film.html"));
   await p.waitForFunction(() => window.ready === true);

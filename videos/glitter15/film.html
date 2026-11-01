@@ -16,14 +16,23 @@
 <body>
 <canvas id="c" width="1080" height="1920"></canvas>
 <div id="hud"></div>
-<script>
+<script type="module">
+import * as THREE from "./vendor/three.module.min.js";
+import { RoomEnvironment } from "./vendor/RoomEnvironment.js";
+import { RoundedBoxGeometry } from "./vendor/RoundedBoxGeometry.js";
 // Spec ad for the Glitter golf-training app (v2: realistic 3D phone, unmasked text).
 // Pure function of t (seconds) in window.seek(t). App screens are an ILLUSTRATION (labelled on screen);
 // only the two features from the reference board are shown: easy access to training, personalized training.
 const W = 1080, H = 1920, CX = W / 2, CY = H / 2, T = 15;
+const LOGO_LIME = "#9bf754";
 const LIME = "#b6f36c", SLATE = "#16282d", SLATE2 = "#22383e", WHITE = "#f6f8f4", INK = "#0e1a1d", RED = "#ff3b30";
 const ctx = document.getElementById("c").getContext("2d");
 const F = (w, s) => `${w} ${s}px Outfit`;
+
+// ---------- official logo (supplied PNG) ----------
+const logoIcon = new Image(); logoIcon.src = "assets/logo-icon.png";      // full app icon, tile included
+const logoMark = new Image(); logoMark.src = "assets/logo-mark.png";      // the green mark alone, transparent
+const MARK_AR = 849 / 590;
 
 // ---------- maths ----------
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -99,27 +108,19 @@ function ball(g, x, y, r, roll, dimpleK = 1, fill = WHITE) {
   g.fillStyle = gr; g.fillRect(-r, -r, 2 * r, 2 * r);
   g.restore();
 }
-// Glitter mark (recreated from the reference board): big circle + small circle with a play triangle
-function mark(g, x, y, u, k = 1, col = LIME, tri = SLATE) {
-  const a = clamp(k);
-  circle(g, x - u * 0.22, y - u * 0.05, u * 0.56, col);
-  const kb = out(prog(a, 0.15, 0.75));
-  circle(g, x + u * 0.42, y + u * 0.22, u * 0.36 * kb, col);
-  const kt = out(prog(a, 0.45, 1));
-  if (kt > 0) {
-    const tx = x + u * 0.44, ty = y + u * 0.22, s = u * 0.17 * kt;
-    g.beginPath(); g.moveTo(tx - s * 0.7, ty - s); g.lineTo(tx + s, ty); g.lineTo(tx - s * 0.7, ty + s); g.closePath();
-    g.fillStyle = tri; g.fill();
-  }
+// Glitter mark = the supplied logo. u = size unit (width = 1.7u). k = build: scales in with a small turn.
+function mark(g, x, y, u, k = 1) {
+  const a = clamp(k); if (a <= 0) return;
+  const w = u * 1.7 * (0.6 + 0.4 * out(a)), h = w / MARK_AR;
+  g.save(); g.globalAlpha *= clamp(a * 2); g.translate(x, y); g.rotate((1 - out(a)) * -0.25);
+  g.drawImage(logoMark, -w / 2, -h / 2, w, h); g.restore();
 }
-// the app icon: slate tile + mark (+ optional badge)
-function appIcon(g, cx, cy, s, markK = 1, badgeK = 0) {
-  g.save(); g.shadowColor = "rgba(14,26,29,0.28)"; g.shadowBlur = s * 0.15; g.shadowOffsetY = s * 0.075;
-  rrect(g, cx - s / 2, cy - s / 2, s, s, s * 0.235, SLATE); g.restore();
-  g.save(); g.strokeStyle = "rgba(246,248,244,0.16)"; g.lineWidth = Math.max(1.5, s * 0.012); g.beginPath(); g.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.235); g.stroke(); g.restore();
-  mark(g, cx + s * 0.04, cy, s * 0.42, markK);
+// the app icon = the supplied icon PNG (+ optional notification badge)
+function appIcon(g, cx, cy, s, markK = 1, badgeK = 0, alpha = 1) {
+  g.save(); g.globalAlpha *= alpha; g.shadowColor = "rgba(14,26,29,0.30)"; g.shadowBlur = s * 0.14; g.shadowOffsetY = s * 0.07;
+  g.drawImage(logoIcon, cx - s / 2, cy - s / 2, s, s); g.restore();
   if (badgeK > 0) {
-    const bx = cx + s / 2 - s * 0.035, by = cy - s / 2 + s * 0.035;
+    const bx = cx + s / 2 - s * 0.06, by = cy - s / 2 + s * 0.06;
     circle(g, bx, by, s * 0.13 * badgeK, RED);
     text(g, "1", bx, by + s * 0.05 * badgeK, s * 0.15 * badgeK, 700, "#fff", "center");
   }
@@ -148,33 +149,24 @@ function homeIcon(g, kind, cx, cy, s) {
   g.restore();
 }
 
-// ---------- the phone: drawn flat off-screen, then projected in 3D ----------
-const PW = 600, PHH = 1240, BEZ = 16, SW = PW - 2 * BEZ, SH = PHH - 2 * BEZ, BODY_R = 96, SCR_R = 80, DEPTH = 46;
-const phoneCv = document.createElement("canvas"); phoneCv.width = PW; phoneCv.height = PHH;
-const pg = phoneCv.getContext("2d");
+// ---------- the phone: a Three.js model, its screen a live canvas texture ----------
+const PW = 600, PHH = 1240, BEZ = 16, SW = PW - 2 * BEZ, SH = PHH - 2 * BEZ, BODY_R = 96, SCR_R = 80, DEPTH = 52;
+const scr = document.createElement("canvas"); scr.width = SW; scr.height = SH;
+const sg = scr.getContext("2d");
 const SLOT = { x: BEZ + 40 + 61 + 2 * 122, y: BEZ + 400 + 170, s: 100 };      // Glitter icon on the home screen (phone coords, centre)
 
 function drawPhoneFlat(t, st) {
-  const g = pg; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, PW, PHH);
-  // titanium band
-  const band = g.createLinearGradient(0, 0, PW, 0);
-  band.addColorStop(0, "#5d6466"); band.addColorStop(0.04, "#c9ced0"); band.addColorStop(0.1, "#7b8285");
-  band.addColorStop(0.9, "#7b8285"); band.addColorStop(0.96, "#c9ced0"); band.addColorStop(1, "#5d6466");
-  rrect(g, 0, 0, PW, PHH, BODY_R, band);
-  rrect(g, 5, 5, PW - 10, PHH - 10, BODY_R - 5, "#050708");            // black glass border
-  // screen
-  g.save(); g.beginPath(); g.roundRect(BEZ, BEZ, SW, SH, SCR_R); g.clip(); g.translate(BEZ, BEZ);
+  const g = sg; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, SW, SH);
+  g.save(); g.beginPath(); g.roundRect(0, 0, SW, SH, SCR_R); g.clip();
   drawScreen(g, t, st);
+  rrect(g, SW / 2 - 92, 22, 184, 54, 27, "#020304");                        // dynamic island + camera
+  circle(g, SW / 2 + 56, 49, 11, "#0d1a2a"); circle(g, SW / 2 + 53, 46, 3.5, "rgba(120,160,255,0.5)");
+  const sx = SW * (0.15 + st.rotY / 90);                                    // glass sheen that slides as the phone turns
+  const sh = g.createLinearGradient(sx - 300, 0, sx + 300, SH * 0.6);
+  sh.addColorStop(0, "rgba(255,255,255,0)"); sh.addColorStop(0.5, "rgba(255,255,255,0.08)"); sh.addColorStop(0.52, "rgba(255,255,255,0.03)"); sh.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = sh; g.fillRect(0, 0, SW, SH);
   g.restore();
-  // dynamic island + camera
-  rrect(g, PW / 2 - 92, BEZ + 22, 184, 54, 27, "#020304");
-  circle(g, PW / 2 + 56, BEZ + 49, 11, "#0d1a2a"); circle(g, PW / 2 + 53, BEZ + 46, 3.5, "rgba(120,160,255,0.5)");
-  // glass reflection: a soft diagonal sheen that slides as the phone turns
-  g.save(); g.beginPath(); g.roundRect(BEZ, BEZ, SW, SH, SCR_R); g.clip();
-  const sx = PW * (0.15 + st.rotY / 90);
-  const sh = g.createLinearGradient(sx - 300, 0, sx + 300, PHH * 0.6);
-  sh.addColorStop(0, "rgba(255,255,255,0)"); sh.addColorStop(0.5, "rgba(255,255,255,0.10)"); sh.addColorStop(0.52, "rgba(255,255,255,0.04)"); sh.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = sh; g.fillRect(0, 0, PW, PHH); g.restore();
+  screenTex.needsUpdate = true;
 }
 function statusBar(g, t, col = WHITE) {
   text(g, "9:41", 66, 62, 30, 600, col);
@@ -269,42 +261,65 @@ function drawApp(g, t, st) {
   if (tap > 0 && tap < 1) { g.save(); g.globalAlpha = 0.35 * (1 - tap); circle(g, dx + slot * 1.5, dy + 55, 26 + 60 * out(tap), WHITE); g.restore(); }
 }
 
-// project the flat phone with a real perspective turn around its vertical axis (+ roll and scale)
-function drawPhone3D(cx, cy, scale, rotY, rotZ, alpha = 1) {
-  const th = rotY * Math.PI / 180, f = 2400, cos = Math.cos(th), sin = Math.sin(th);
-  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx, cy); ctx.rotate(rotZ * Math.PI / 180); ctx.scale(scale, scale);
-  // contact + ambient shadow
-  ctx.save(); ctx.filter = "blur(38px)"; ctx.globalAlpha = 0.32 * alpha; ctx.fillStyle = INK;
-  ctx.beginPath(); ctx.roundRect(-PW * 0.42 * Math.abs(cos) + 30, -PHH / 2 + 70, PW * 0.84 * Math.abs(cos), PHH, 90); ctx.fill(); ctx.restore();
-  // side band (the phone's thickness) on the edge that faces us
-  const edgeX = (sin > 0 ? -1 : 1) * PW / 2;
-  const pz = edgeX * sin, pe = f / (f + pz), ex = edgeX * cos * pe;
-  const bandW = DEPTH * Math.abs(sin) * pe;
-  if (bandW > 0.5) {
-    const bx = sin > 0 ? ex - bandW : ex;
-    const gb = ctx.createLinearGradient(bx, 0, bx + bandW, 0);
-    gb.addColorStop(0, "#6e7578"); gb.addColorStop(0.5, "#c3c8ca"); gb.addColorStop(1, "#5a6164");
-    rrect(ctx, bx, -PHH / 2 * pe + 40 * pe, bandW, PHH * pe - 80 * pe, bandW / 2, gb);
-    // side buttons on the visible band
-    const btns = sin > 0 ? [[0.17, 0.05], [0.25, 0.09], [0.36, 0.09]] : [[0.27, 0.15]];
-    btns.forEach(([p, l]) => rrect(ctx, bx - 4, (-PHH / 2 + PHH * p) * pe, bandW + 8, PHH * l * pe, 4, "#9aa1a4"));
-  }
-  // the front, column by column with perspective
-  const STEP = 3;
-  for (let u = 0; u < PW; u += STEP) {
-    const X = u - PW / 2, z = X * sin, p = f / (f + z);
-    const x = X * cos * p, w = STEP * cos * p + 0.8;
-    if (w <= 0) continue;
-    ctx.drawImage(phoneCv, u, 0, STEP, PHH, x, -PHH / 2 * p, w, PHH * p);
-  }
-  ctx.restore();
+// Three.js scene (threejs-webgl skill): physical titanium body, black glass front, buttons, studio environment.
+// 1 world unit = 1 px at z = 0, so the phone sits exactly where the 2D layout expects it.
+const glc = document.createElement("canvas"); glc.width = W; glc.height = H;
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const DIST = (H / 2) / Math.tan(15 * Math.PI / 180);
+const camera = new THREE.PerspectiveCamera(30, W / H, 10, DIST * 4); camera.position.set(0, 0, DIST); camera.lookAt(0, 0, 0);
+const keyL = new THREE.DirectionalLight(0xffffff, 1.4); keyL.position.set(-900, 1400, 1800); scene.add(keyL);
+const rimL = new THREE.DirectionalLight(0xe8fff0, 1.0); rimL.position.set(1800, 200, -300); scene.add(rimL);
+function rrShape(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.absarc(x + w - r, y + r, r, -Math.PI / 2, 0);
+  s.lineTo(x + w, y + h - r); s.absarc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+  s.lineTo(x + r, y + h); s.absarc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+  s.lineTo(x, y + r); s.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
+  return s;
 }
-
-// where a point of the flat phone lands on screen (same projection as drawPhone3D)
+const phone = new THREE.Group(); scene.add(phone);
+const BEV = 9, D0 = DEPTH - 2 * BEV, FRONT = DEPTH / 2;
+const titanium = new THREE.MeshPhysicalMaterial({ color: 0x9aa2a7, metalness: 1, roughness: 0.3, clearcoat: 0.4, clearcoatRoughness: 0.2 });
+const bodyGeo = new THREE.ExtrudeGeometry(rrShape(PW - 2 * BEV, PHH - 2 * BEV, BODY_R - BEV), { depth: D0, bevelEnabled: true, bevelThickness: BEV, bevelSize: BEV, bevelSegments: 6, curveSegments: 40 });
+bodyGeo.translate(0, 0, -D0 / 2);
+phone.add(new THREE.Mesh(bodyGeo, titanium));
+const glass = new THREE.Mesh(new THREE.ShapeGeometry(rrShape(PW - 8, PHH - 8, BODY_R - 4), 40),
+  new THREE.MeshPhysicalMaterial({ color: 0x040607, roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03 }));
+glass.position.z = FRONT + 0.4; phone.add(glass);
+const screenTex = new THREE.CanvasTexture(scr); screenTex.colorSpace = THREE.SRGBColorSpace; screenTex.anisotropy = 4;
+const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(SW, SH), new THREE.MeshBasicMaterial({ map: screenTex, transparent: true, toneMapped: false }));
+screenMesh.position.z = FRONT + 0.8; phone.add(screenMesh);
+[[-1, 0.235, 0.05], [-1, 0.32, 0.085], [-1, 0.42, 0.085], [1, 0.33, 0.14]].forEach(([side, p, l]) => {     // action, volume, power
+  const b = new THREE.Mesh(new RoundedBoxGeometry(10, PHH * l, 16, 3, 4), titanium);
+  b.position.set(side * (PW / 2 + 2), PHH / 2 - PHH * p - PHH * l / 2, 0); phone.add(b);
+});
+const _v = new THREE.Vector3();
+function placePhone(cy, rotY, rotZ) {
+  phone.position.set(0, CY - cy, 0);
+  phone.rotation.set(0, rotY * Math.PI / 180, rotZ * Math.PI / 180, "ZYX");
+  phone.updateMatrixWorld(true);
+}
+function toScreen(px, py) {           // phone coords (px from left, py from top, on the glass) -> canvas px
+  _v.set(px - PW / 2, PHH / 2 - py, FRONT + 1); phone.localToWorld(_v); _v.project(camera);
+  return { x: (_v.x + 1) / 2 * W, y: (1 - _v.y) / 2 * H };
+}
+function drawPhone3D(cy, rotY, rotZ) {
+  placePhone(cy, rotY, rotZ);
+  const c = toScreen(PW / 2, PHH / 2), cos = Math.abs(Math.cos(rotY * Math.PI / 180));
+  ctx.save(); ctx.filter = "blur(40px)"; ctx.globalAlpha = 0.30; ctx.fillStyle = INK;           // soft drop shadow on the backdrop
+  ctx.beginPath(); ctx.roundRect(c.x - PW * 0.42 * cos + 34, c.y - PHH / 2 + 80, PW * 0.84 * cos, PHH, 90); ctx.fill(); ctx.restore();
+  renderer.render(scene, camera);
+  ctx.drawImage(glc, 0, 0);
+}
 function projectPoint(px, py, rotY, rotZ, cy) {
-  const th = rotY * Math.PI / 180, f = 2400, X = px - PW / 2, Y = py - PHH / 2, z = X * Math.sin(th), p = f / (f + z);
-  const x = X * Math.cos(th) * p, y = Y * p, r = rotZ * Math.PI / 180;
-  return { x: CX + x * Math.cos(r) - y * Math.sin(r), y: cy + x * Math.sin(r) + y * Math.cos(r), k: p * Math.cos(th) };
+  placePhone(cy, rotY, rotZ);
+  const a = toScreen(px, py), b = toScreen(px + 50, py);
+  return { x: a.x, y: a.y, k: Math.hypot(b.x - a.x, b.y - a.y) / 50 };
 }
 
 // ---------- layout ----------
@@ -348,9 +363,8 @@ window.seek = async (t) => {
       ctx.save(); ctx.shadowColor = "rgba(14,26,29,0.28)"; ctx.shadowBlur = 60 * iconK; ctx.shadowOffsetY = 30 * iconK;
       rrect(ctx, icx - isz / 2, icy - isz / 2, isz, isz, isz * 0.235, SLATE); ctx.restore();
     }
-    if (toMark < 1) ball(ctx, icx, icy, br * lerp(1, SLOT.s / ICON_S, fly), roll, 1 - toMark, mix(WHITE, LIME, toMark));
-    if (toMark > 0 && iconK > 0) mark(ctx, icx + isz * 0.04 * rise, icy, isz * 0.42, markK);
-    if (badge > 0) { const r = isz * 0.13 * badge, bxr = icx + isz / 2 - isz * 0.035, byr = icy - isz / 2 + isz * 0.035; circle(ctx, bxr, byr, r, RED); text(ctx, "1", bxr, byr + r * 0.38, r * 1.15, 700, "#fff", "center"); }
+    if (toMark < 1) ball(ctx, icx, icy, br * lerp(1, SLOT.s / ICON_S, fly), roll, 1 - toMark, mix(WHITE, LOGO_LIME, toMark));
+    if (markK > 0 && iconK > 0) appIcon(ctx, icx, icy, isz, 1, badge, markK);      // the supplied icon resolves over the tile
   } else if (t < 9.5) {
     drawPhoneFrame(t, rotY, rotZ, pcy, { iconInPhone, press, tap: tapK, badge: 1 - open, open, header });
   }
@@ -387,7 +401,7 @@ window.seek = async (t) => {
     const mx = lerp(CX, CX - 290, slide), my = CY - 120;
     ctx.save(); ctx.translate(mx, my); ctx.scale(m, m); mark(ctx, 0, 0, 150, build); ctx.restore();
     revealText("Glitter", mx + 175, my + 58, 170, 700, WHITE, 12.05, null, t, { stagger: 0.04 });
-    revealText("Our app is now live!", CX, CY + 170, 76, 600, LIME, 12.45, null, t, { align: "center", stagger: 0.02 });
+    revealText("Our app is now live!", CX, CY + 170, 76, 600, LOGO_LIME, 12.45, null, t, { align: "center", stagger: 0.02 });
     const st = sp(t, 12.9, S_UI);
     [["App Store", -1], ["Google Play", 1]].forEach(([s, side]) => {
       const w = 330, x = CX + side * 175 - w / 2, y = CY + 270 + (1 - st) * 60;
@@ -403,12 +417,13 @@ window.seek = async (t) => {
 function drawPhoneFrame(t, rotY, rotZ, pcy, st) {
   st.rotY = rotY;
   drawPhoneFlat(t, st);
-  drawPhone3D(CX, pcy, 1, rotY, rotZ);
+  drawPhone3D(pcy, rotY, rotZ);
 }
 
 // ---------- boot + preview HUD ----------
 (async () => {
   await document.fonts.load(F(700, 100)); await document.fonts.load(F(400, 100)); await document.fonts.load(F(800, 100)); await document.fonts.ready;
+  await logoIcon.decode(); await logoMark.decode();
   const q = new URLSearchParams(location.search);
   await window.seek(parseFloat(q.get("t") || "0"));
   window.ready = true;
