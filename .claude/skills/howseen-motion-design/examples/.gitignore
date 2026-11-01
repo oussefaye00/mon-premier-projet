@@ -1,0 +1,12 @@
+*/assets/audio/
+*/assets/sfx/
+*/assets/svg/
+*/assets/wordpress.svg
+*/assets/shopify.svg
+*/assets/ghost.svg
+*/fonts/
+*/sub*/
+*/probe/
+*/out/
+__pycache__/
+.DS_Store
