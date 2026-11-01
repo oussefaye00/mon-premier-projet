@@ -100,7 +100,7 @@ window.seek = async (t) => {
   t = clamp(t, 0, T);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-  const cam = 1 + 0.006 * Math.sin(t * 0.9) + 0.02 * io(prog(t, 12.6, 15));
+  const cam = 1 + 0.006 * Math.sin(Math.min(t, 12.97) * 0.9);   // final hold is still: no shimmer on the name
   ctx.translate(CX, CY); ctx.scale(cam, cam); ctx.translate(-CX, -CY);
 
   // ===== 1. HOOK (0 - 2.4): the dot falls under gravity, lands, lifts; MOTION rises =====
@@ -162,14 +162,14 @@ window.seek = async (t) => {
       ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
       rrect(-w / 2, -h / 2, w, h, lerp(RAD, i === 0 || i === 8 ? 13 : 0, merge), ACC); ctx.restore();
     }
-    maskWord("rythme", CX, CY + 470, 120, 700, INK, 7.98, 9.45, t, { stagger: 0.03, exitUp: true });
+    maskWord("rythme", CX, CY + 470, 120, 700, INK, 7.88, 9.45, t, { stagger: 0.03, exitUp: true });
   }
 
   // ===== 5. TIMING (10.05 - 12.1): the bar becomes a track, the knob runs as the easing curve draws =====
-  if (t >= 10.05 && t < 11.8) {
+  if (t >= 10.05 && t < 11.6) {
     const toTrack = io(prog(t, 10.05, 10.35));
     const run = io(prog(t, 10.50, 11.50));
-    const fade = io(prog(t, 11.50, 11.80));
+    const fade = io(prog(t, 11.36, 11.60));
     const kx = lerp(BAR_X0, BAR_X1, run);
     ctx.save(); ctx.globalAlpha = 1 - fade;
     rrect(BAR_X0 - 13, BAR_Y - 13, BAR_X1 - BAR_X0 + 26, 26, 13, mix(ACC, TRACK, toTrack));
@@ -183,7 +183,7 @@ window.seek = async (t) => {
       const u = j / N, px = lerp(BAR_X0, BAR_X1, u), py = lerp(by0, by1, io(u));
       j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
     }
-    if (run > 0.04) ctx.stroke();
+    if (run > 0.12) ctx.stroke();
     ctx.restore();
     maskWord("timing", CX, CY - 340, 120, 700, INK, 10.05, 11.28, t, { stagger: 0.035, exitUp: true });
     const kr = lerp(13, 40, sp(t, 10.42, S_UI));

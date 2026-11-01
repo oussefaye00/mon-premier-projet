@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Glitter ad 15 s</title>
+<style>
+  @font-face { font-family: "Outfit"; src: url("fonts/outfit-latin.woff2") format("woff2"); font-weight: 100 900; }
+  html, body { margin: 0; background: #111; }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+  body.preview canvas { height: 92vh; width: auto; }
+  #hud { position: fixed; left: 12px; bottom: 12px; font: 13px/1.4 monospace; color: #ddd; background: #000a; padding: 6px 10px; border-radius: 6px; }
+  body:not(.preview) #hud { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="hud"></div>
+<script>
+// Spec ad for the Glitter golf-training app. Pure function of t (seconds) in window.seek(t).
+// Brand cues taken from the reference board: lime + deep slate, two-circle mark with a play triangle,
+// "Learn. Play. Shine.", "Our App Is Now Live!", "Easy access to training", "Personalized training experience".
+// App screens are an ILLUSTRATION (labelled on screen); no feature beyond the two above is claimed.
+const W = 1080, H = 1920, CX = W / 2, CY = H / 2, T = 15;
+const LIME = "#b6f36c", SLATE = "#16282d", SLATE2 = "#22383e", WHITE = "#f6f8f4", INK = "#0e1a1d", RED = "#ff3b30";
+const ctx = document.getElementById("c").getContext("2d");
+const F = (w, s) => `${w} ${s}px Outfit`;
+
+// ---------- maths ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const io = x => (x = clamp(x), x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const out = x => 1 - Math.pow(1 - clamp(x), 3);
+const out5 = x => 1 - Math.pow(1 - clamp(x), 5);
+const inn = x => Math.pow(clamp(x), 3);
+function spring(t, t0, k = 170, d = 26) {
+  const x = t - t0; if (x <= 0) return 0;
+  const w = Math.sqrt(k), z = d / (2 * w);
+  if (z >= 1) return 1 - Math.exp(-w * x) * (1 + w * x);
+  const wd = w * Math.sqrt(1 - z * z);
+  return 1 - Math.exp(-z * w * x) * (Math.cos(wd * x) + (z * w / wd) * Math.sin(wd * x));
+}
+const S_UI = [320, 30], S_BOX = [170, 22], S_TYPE = [120, 20];
+const sp = (t, t0, s) => spring(t, t0, s[0], s[1]);
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mix = (a, b, k) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], clamp(k)))).join(",")})`; };
+
+// ---------- drawing ----------
+function rrect(x, y, w, h, r, fill) {
+  w = Math.max(0, w); h = Math.max(0, h); r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill();
+}
+function circle(x, y, r, fill) { ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill(); }
+function maskWord(str, x, y, size, weight, color, tIn, tOut, t, opts = {}) {
+  const stag = opts.stagger ?? 0.045, align = opts.align ?? "left", track = opts.track ?? 0;
+  ctx.font = F(weight, size);
+  const chars = [...str], widths = chars.map(c => ctx.measureText(c).width);
+  const total = widths.reduce((a, b) => a + b, 0) + track * (chars.length - 1);
+  let x0 = align === "center" ? x - total / 2 : align === "right" ? x - total : x;
+  const asc = size * 0.8, desc = size * 0.28;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, y - asc - size * .08, W, asc + desc + size * .16); ctx.clip();
+  ctx.fillStyle = color; ctx.textBaseline = "alphabetic";
+  chars.forEach((c, i) => {
+    const kin = sp(t, tIn + i * stag, S_UI);
+    const kout = tOut == null ? 0 : inn(prog(t, tOut + i * stag * .4, tOut + i * stag * .4 + .14));
+    const dy = (1 - kin) * size * 1.3 - kout * size * 1.3;
+    ctx.save(); ctx.translate(x0 + widths[i] / 2, y + dy); ctx.rotate((1 - kin) * 0.1);
+    ctx.fillText(c, -widths[i] / 2, 0); ctx.restore();
+    x0 += widths[i] + track;
+  });
+  ctx.restore();
+  return total;
+}
+function text(str, x, y, size, weight, color, align = "left", alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.font = F(weight, size); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "alphabetic";
+  ctx.fillText(str, x, y); ctx.restore();
+}
+// golf ball: white disc, soft shading, dimples that slide with the roll angle
+function ball(x, y, r, roll, dimpleK = 1, fill = WHITE) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = fill; ctx.fillRect(-r, -r, 2 * r, 2 * r);
+  if (dimpleK > 0) {
+    const s = r * 0.24, off = ((roll * r) % s + s) % s;
+    ctx.fillStyle = `rgba(14,26,29,${0.10 * dimpleK})`;
+    for (let gy = -r - s; gy < r + s; gy += s * 0.86) for (let gx = -r - 2 * s; gx < r + 2 * s; gx += s) {
+      const row = Math.round(gy / (s * .86)); const px = gx + off + (row % 2 ? s / 2 : 0);
+      const d = Math.hypot(px, gy) / r; if (d > 0.96) continue;
+      const rr = s * 0.28 * Math.sqrt(1 - d * d);
+      ctx.beginPath(); ctx.ellipse(px, gy, rr * Math.sqrt(1 - d * d) + rr * .2, rr, Math.atan2(gy, px), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  const g = ctx.createRadialGradient(-r * .35, -r * .4, r * .1, 0, 0, r * 1.05);
+  g.addColorStop(0, "rgba(255,255,255,0.25)"); g.addColorStop(0.7, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(14,26,29,0.22)");
+  ctx.fillStyle = g; ctx.fillRect(-r, -r, 2 * r, 2 * r);
+  ctx.restore();
+}
+// Glitter mark (recreated from the reference board): big circle + small circle, play triangle in the small one.
+// k = build progress 0..1 (small circle and triangle grow in), u = size unit
+function mark(x, y, u, k = 1, col = LIME, tri = SLATE) {
+  const a = clamp(k);
+  circle(x - u * 0.22, y - u * 0.05, u * 0.56, col);
+  const kb = out(prog(a, 0.15, 0.75));
+  circle(x + u * 0.42, y + u * 0.22, u * 0.36 * kb, col);
+  const kt = out(prog(a, 0.45, 1));
+  if (kt > 0) {
+    const tx = x + u * 0.44, ty = y + u * 0.22, s = u * 0.17 * kt;
+    ctx.beginPath(); ctx.moveTo(tx - s * 0.7, ty - s); ctx.lineTo(tx + s, ty); ctx.lineTo(tx - s * 0.7, ty + s); ctx.closePath();
+    ctx.fillStyle = tri; ctx.fill();
+  }
+}
+function icon(kind, x, y, s, col) {          // simple line icons for the dock
+  ctx.save(); ctx.translate(x, y); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = s * 0.11; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath();
+  if (kind === "home") { ctx.moveTo(-s * .42, -s * .02); ctx.lineTo(0, -s * .4); ctx.lineTo(s * .42, -s * .02); ctx.moveTo(-s * .3, -s * .12); ctx.lineTo(-s * .3, s * .38); ctx.lineTo(s * .3, s * .38); ctx.lineTo(s * .3, -s * .12); ctx.stroke(); }
+  if (kind === "play") { ctx.arc(0, 0, s * .4, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-s * .1, -s * .16); ctx.lineTo(s * .18, 0); ctx.lineTo(-s * .1, s * .16); ctx.closePath(); ctx.fill(); }
+  if (kind === "plan") { [-.3, 0, .3].forEach(v => { ctx.moveTo(-s * .2, v * s); ctx.lineTo(s * .38, v * s); }); ctx.stroke(); [-.3, 0, .3].forEach(v => { ctx.beginPath(); ctx.arc(-s * .36, v * s, s * .05, 0, 7); ctx.fill(); }); }
+  if (kind === "user") { ctx.arc(0, -s * .14, s * .17, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, s * .42, s * .32, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+  ctx.restore();
+}
+
+// ---------- layout ----------
+const LEFT = 96;
+const GROUND = 1240;
+const ICON_Y = CY - 120, ICON_S = 400;
+const PH_W = 620, PH_H = 1280, PH_X = CX - PH_W / 2, PH_Y = 600, BEZ = 18;   // phone body; text above it stays in the safe zone
+
+window.seek = async (t) => {
+  t = clamp(t, 0, T);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = LIME; ctx.fillRect(0, 0, W, H);
+
+  // ===== 1. HOOK (0 - 2.4): a ball rolls in and stops; "Iconic golf / starts here." =====
+  const rollK = out5(prog(t, 0, 1.0));
+  const bx1 = lerp(-140, CX + 170, rollK);
+  const roll = (bx1 + 140) / 120;
+  // ===== 2. ICON (2.4 - 4.7): the ball rises and becomes the mark inside the app icon =====
+  const rise = sp(t, 2.35, S_BOX);
+  const iconK = sp(t, 2.55, S_BOX);
+  const markK = io(prog(t, 2.75, 3.35));
+  // ===== 3. PHONE (4.7 - 9.2): the icon opens into the app screen =====
+  const open = io(prog(t, 4.6, 5.15));
+  const phoneOut = inn(prog(t, 9.1, 9.42));
+
+  if (t < 9.45) {
+    // ball / mark position
+    const bx = lerp(bx1, CX - 0, rise), by = lerp(GROUND - 110, ICON_Y, rise);
+    const br = lerp(110, ICON_S * 0.2, rise);
+    // shadow on the ground while rolling
+    if (rise < 1) { ctx.save(); ctx.globalAlpha = 0.18 * (1 - rise); ctx.beginPath(); ctx.ellipse(bx, GROUND + 4, br * 0.9, br * 0.16, 0, 0, 7); ctx.fillStyle = INK; ctx.fill(); ctx.restore(); }
+    // app icon tile grows behind the ball, then opens into the phone
+    const tileS = ICON_S * iconK;
+    let tx = CX - tileS / 2, ty = ICON_Y - tileS / 2, tw = tileS, th = tileS, tr = tileS * 0.24;
+    const dropY = phoneOut * 1400;
+    tx = lerp(tx, PH_X, open); ty = lerp(ty, PH_Y, open) + dropY; tw = lerp(tw, PH_W, open); th = lerp(th, PH_H, open); tr = lerp(tr, 92, open);
+    if (iconK > 0.001) {
+      ctx.save(); ctx.shadowColor = "rgba(14,26,29,0.28)"; ctx.shadowBlur = 60 * iconK; ctx.shadowOffsetY = 30 * iconK;
+      rrect(tx, ty, tw, th, tr, open > 0 ? mix(SLATE, "#0d1316", open) : SLATE); ctx.restore();
+      if (open > 0) {                             // screen inside the body
+        rrect(tx + BEZ, ty + BEZ, tw - 2 * BEZ, th - 2 * BEZ, tr - BEZ, SLATE);
+      }
+    }
+    // the ball turns lime and becomes the big circle of the mark; the mark then shrinks into the app header
+    const toMark = io(prog(t, 2.5, 2.95));
+    if (open <= 0) {
+      if (toMark < 1) ball(bx, by, br, roll, 1 - toMark, mix(WHITE, LIME, toMark));
+      if (toMark > 0) mark(CX + ICON_S * 0.04, ICON_Y, ICON_S * 0.42 * (iconK > 0 ? 1 : 0), markK);
+      // notification badge
+      const badge = sp(t, 3.55, S_UI);
+      if (badge > 0) {
+        const bxr = tx + tw - 14, byr = ty + 14;
+        circle(bxr, byr, 52 * badge, RED);
+        text("1", bxr, byr + 20 * badge, 60 * badge, 700, "#fff", "center");
+      }
+    } else {
+      // ===== app screen (illustration) =====
+      const sx = tx + BEZ, sy = ty + BEZ, sw = tw - 2 * BEZ;
+      ctx.save(); ctx.beginPath(); ctx.roundRect(sx, sy, sw, th - 2 * BEZ, tr - BEZ); ctx.clip();
+      const ui = (t0) => sp(t, t0, S_UI);
+      // header mark travels from the icon centre to the top-left of the screen
+      const hk = io(prog(t, 4.6, 5.15));
+      const mx = lerp(CX + ICON_S * 0.04, sx + 74, hk), my = lerp(ICON_Y, sy + 150, hk) ;
+      mark(mx, my, lerp(ICON_S * 0.42, 46, hk), 1);
+      text("Glitter", sx + 120, sy + 166, 46, 700, WHITE, "left", out(prog(t, 5.0, 5.3)));
+      text("9:41", sx + 60, sy + 64, 30, 600, WHITE, "left", out(prog(t, 4.9, 5.2)));
+      rrect(sx + sw / 2 - 90, sy + 22, 180, 52, 26, "#05090a");          // dynamic island
+      text("Illustration", sx + sw - 40, sy + 166, 26, 500, "rgba(246,248,244,0.55)", "right", out(prog(t, 5.2, 5.5)));
+      const swap = io(prog(t, 7.05, 7.4));                                // training list -> personal plan
+      // --- page A: easy access to training
+      ctx.save(); ctx.translate(-swap * sw, 0); ctx.globalAlpha = 1 - swap * .6;
+      const a1 = ui(5.15);
+      text("Today's training", sx + 50, sy + 290 + (1 - a1) * 40, 58, 700, WHITE, "left", a1);
+      const cards = [["Putting", "12 min", LIME, SLATE], ["Chipping", "8 min", SLATE2, WHITE], ["Driving range", "15 min", SLATE2, WHITE], ["Bunker shots", "10 min", SLATE2, WHITE]];
+      cards.forEach(([n, d, bg, fg], i) => {
+        const k = ui(5.3 + i * 0.07); const cy = sy + 360 + i * 170 + (1 - k) * 80;
+        ctx.save(); ctx.globalAlpha *= k;
+        rrect(sx + 40, cy, sw - 80, 146, 34, bg);
+        text(n, sx + 80, cy + 66, 40, 600, fg); text(d, sx + 80, cy + 112, 28, 400, i === 0 ? SLATE : "rgba(246,248,244,0.6)");
+        circle(sx + sw - 110, cy + 73, 38, i === 0 ? SLATE : LIME);
+        ctx.beginPath(); const px = sx + sw - 110, py = cy + 73; ctx.moveTo(px - 9, py - 15); ctx.lineTo(px + 15, py); ctx.lineTo(px - 9, py + 15); ctx.closePath(); ctx.fillStyle = i === 0 ? LIME : SLATE; ctx.fill();
+        ctx.restore();
+      });
+      ctx.restore();
+      // --- page B: personalized plan
+      ctx.save(); ctx.translate((1 - swap) * sw, 0); ctx.globalAlpha = 0.4 + swap * .6;
+      text("Your plan", sx + 50, sy + 290, 58, 700, WHITE);
+      text("Built around your level", sx + 50, sy + 340, 30, 400, "rgba(246,248,244,0.6)");
+      const steps = ["Warm-up routine", "Short game focus", "Putting under pressure", "Review your swing"];
+      steps.forEach((s, i) => {
+        const k = sp(t, 7.35 + i * 0.09, S_UI), cy = sy + 410 + i * 150;
+        ctx.save(); ctx.globalAlpha *= k;
+        rrect(sx + 40, cy + (1 - k) * 60, sw - 80, 126, 32, SLATE2);
+        const done = i < 2;
+        circle(sx + 104, cy + 63 + (1 - k) * 60, 26, done ? LIME : "rgba(246,248,244,0.15)");
+        if (done) { ctx.save(); ctx.strokeStyle = SLATE; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(sx + 92, cy + 64 + (1 - k) * 60); ctx.lineTo(sx + 101, cy + 73 + (1 - k) * 60); ctx.lineTo(sx + 117, cy + 54 + (1 - k) * 60); ctx.stroke(); ctx.restore(); }
+        text(s, sx + 152, cy + 76 + (1 - k) * 60, 34, 500, WHITE);
+        ctx.restore();
+      });
+      ctx.restore();
+      // floating dock with a sliding pill (reference board: floating / pill highlight nav)
+      const dk = ui(5.55), dy = sy + th - 2 * BEZ - 150 + (1 - dk) * 200;
+      const dw = sw - 120, dx = sx + 60;
+      rrect(dx, dy, dw, 110, 55, "rgba(5,9,10,0.85)");
+      const slot = dw / 4, pos = io(prog(t, 6.85, 7.15));
+      rrect(dx + 10 + slot * pos, dy + 10, slot - 20, 90, 45, LIME);
+      ["home", "play", "plan", "user"].forEach((k, i) => {
+        const on = i === 0 ? 1 - pos : i === 1 ? pos : 0;
+        icon(k, dx + slot * (i + 0.5), dy + 55, 46, mix("#f6f8f4", SLATE, on));
+      });
+      ctx.restore();
+    }
+    // copy around the hero
+    maskWord("Iconic golf", LEFT, 640, 150, 700, INK, 0.75, 2.2, t);
+    maskWord("starts here.", LEFT, 800, 150, 700, INK, 0.85, 2.25, t);
+    maskWord("Now on your phone.", CX, 1420, 84, 600, INK, 3.0, 4.45, t, { align: "center", stagger: 0.025 });
+    maskWord("Easy access", LEFT, 470, 92, 700, INK, 5.35, 6.95, t);
+    maskWord("to training", LEFT, 570, 92, 700, INK, 5.45, 7.0, t);
+    maskWord("Personalized", LEFT, 470, 92, 700, INK, 7.25, 9.0, t);
+    maskWord("training", LEFT, 570, 92, 700, INK, 7.35, 9.05, t);
+  }
+
+  // ===== 4. LEARN. PLAY. SHINE. (9.2 - 11.4): panels rise, one word each =====
+  const panels = [[9.15, SLATE, LIME, "Learn."], [9.85, LIME, SLATE, "Play."], [10.55, SLATE, LIME, "Shine."]];
+  panels.forEach(([t0, bg, fg, word], i) => {
+    const k = io(prog(t, t0, t0 + 0.32));
+    if (k <= 0) return;
+    const top = lerp(H, 0, k);
+    rrect(0, top, W, H - top + 2, lerp(120, 0, k), bg);
+    const next = panels[i + 1];
+    maskWord(word, CX, CY + 80, 230, 800, fg, t0 + 0.18, next ? next[0] + 0.05 : 11.15, t, { align: "center", stagger: 0.04, track: -6 });
+    if (word === "Shine.") {          // glint on the full stop
+      const g = sp(t, 10.85, S_UI) * (1 - io(prog(t, 11.1, 11.3)));
+      if (g > 0) { ctx.save(); ctx.globalAlpha = g; ctx.strokeStyle = WHITE; ctx.lineWidth = 8; ctx.lineCap = "round";
+        const gx = CX + 300, gy = CY - 70, L = 46 * g;
+        ctx.beginPath(); ctx.moveTo(gx - L, gy); ctx.lineTo(gx + L, gy); ctx.moveTo(gx, gy - L); ctx.lineTo(gx, gy + L); ctx.stroke(); ctx.restore(); }
+    }
+  });
+
+  // ===== 5. LOCKUP (11.3 - 15): mark + wordmark, "Our app is now live!", stores =====
+  if (t >= 11.15) {
+    const m = sp(t, 11.25, S_TYPE);
+    const build = io(prog(t, 11.25, 11.75));
+    const u = 150;
+    const slide = sp(t, 11.7, S_BOX);
+    const mx = lerp(CX, CX - 250, slide), my = CY - 120;
+    ctx.save(); ctx.translate(mx, my); ctx.scale(m, m); mark(0, 0, u, build); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(mx + 120, 0, W, H); ctx.clip();
+    text("Glitter", lerp(mx - 140, mx + 150, slide), my + 62, 190, 700, WHITE, "left", clamp(slide * 1.4));
+    ctx.restore();
+    maskWord("Our app is now live!", CX, CY + 170, 76, 600, LIME, 12.15, null, t, { align: "center", stagger: 0.022 });
+    const st = sp(t, 12.6, S_UI);
+    [["App Store", -1], ["Google Play", 1]].forEach(([s, side]) => {
+      const w = 330, x = CX + side * 175 - w / 2, y = CY + 270 + (1 - st) * 60;
+      ctx.save(); ctx.globalAlpha = st;
+      rrect(x, y, w, 100, 50, "rgba(246,248,244,0.1)");
+      ctx.strokeStyle = "rgba(246,248,244,0.35)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(x, y, w, 100, 50); ctx.stroke();
+      text(s, x + w / 2, y + 63, 40, 600, WHITE, "center");
+      ctx.restore();
+    });
+  }
+  return true;
+};
+
+// ---------- boot + preview HUD ----------
+(async () => {
+  await document.fonts.load(F(700, 100)); await document.fonts.load(F(400, 100)); await document.fonts.ready;
+  const q = new URLSearchParams(location.search);
+  await window.seek(parseFloat(q.get("t") || "0"));
+  window.ready = true;
+  if (!q.has("preview")) return;
+  document.body.classList.add("preview");
+  let cur = 0, playing = true, last = null; const hud = document.getElementById("hud");
+  const loop = (ts) => {
+    if (playing) { if (last != null) cur += (ts - last) / 1000; if (cur > T) cur = 0; }
+    last = ts; window.seek(cur); hud.textContent = `${cur.toFixed(2)} s  [space] play  [←/→] frame  [R] replay`;
+    requestAnimationFrame(loop);
+  };
+  addEventListener("keydown", e => {
+    if (e.code === "Space") { playing = !playing; e.preventDefault(); }
+    if (e.code === "ArrowRight") { playing = false; cur = Math.min(T, cur + 1 / 30); }
+    if (e.code === "ArrowLeft") { playing = false; cur = Math.max(0, cur - 1 / 30); }
+    if (e.code === "KeyR") { cur = 0; playing = true; }
+  });
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
