@@ -124,7 +124,7 @@ function icon(kind, x, y, s, col) {          // simple line icons for the dock
 const LEFT = 96;
 const GROUND = 1240;
 const ICON_Y = CY - 120, ICON_S = 400;
-const PH_W = 620, PH_H = 1280, PH_X = CX - PH_W / 2, PH_Y = 600, BEZ = 18;   // phone body; text above it stays in the safe zone
+const PH_W = 580, PH_H = 1200, PH_X = CX - PH_W / 2, PH_Y = 650, BEZ = 18;   // phone body; text above it stays in the safe zone
 
 window.seek = async (t) => {
   t = clamp(t, 0, T);
@@ -137,7 +137,7 @@ window.seek = async (t) => {
   const roll = (bx1 + 140) / 120;
   // ===== 2. ICON (2.4 - 4.7): the ball rises and becomes the mark inside the app icon =====
   const rise = sp(t, 2.35, S_BOX);
-  const iconK = sp(t, 2.55, S_BOX);
+  const iconK = sp(t, 2.42, S_BOX);
   const markK = io(prog(t, 2.75, 3.35));
   // ===== 3. PHONE (4.7 - 9.2): the icon opens into the app screen =====
   const open = io(prog(t, 4.6, 5.15));
@@ -151,7 +151,7 @@ window.seek = async (t) => {
     if (rise < 1) { ctx.save(); ctx.globalAlpha = 0.18 * (1 - rise); ctx.beginPath(); ctx.ellipse(bx, GROUND + 4, br * 0.9, br * 0.16, 0, 0, 7); ctx.fillStyle = INK; ctx.fill(); ctx.restore(); }
     // app icon tile grows behind the ball, then opens into the phone
     const tileS = ICON_S * iconK;
-    let tx = CX - tileS / 2, ty = ICON_Y - tileS / 2, tw = tileS, th = tileS, tr = tileS * 0.24;
+    let tx = bx - tileS / 2, ty = by - tileS / 2, tw = tileS, th = tileS, tr = tileS * 0.24;   // the tile grows around the ball
     const dropY = phoneOut * 1400;
     tx = lerp(tx, PH_X, open); ty = lerp(ty, PH_Y, open) + dropY; tw = lerp(tw, PH_W, open); th = lerp(th, PH_H, open); tr = lerp(tr, 92, open);
     if (iconK > 0.001) {
@@ -162,10 +162,10 @@ window.seek = async (t) => {
       }
     }
     // the ball turns lime and becomes the big circle of the mark; the mark then shrinks into the app header
-    const toMark = io(prog(t, 2.5, 2.95));
+    const toMark = io(prog(t, 2.68, 3.0));
     if (open <= 0) {
       if (toMark < 1) ball(bx, by, br, roll, 1 - toMark, mix(WHITE, LIME, toMark));
-      if (toMark > 0) mark(CX + ICON_S * 0.04, ICON_Y, ICON_S * 0.42 * (iconK > 0 ? 1 : 0), markK);
+      if (toMark > 0) mark(bx + ICON_S * 0.04 * rise, by, ICON_S * 0.42 * (iconK > 0 ? 1 : 0), markK);
       // notification badge
       const badge = sp(t, 3.55, S_UI);
       if (badge > 0) {
@@ -241,16 +241,16 @@ window.seek = async (t) => {
   }
 
   // ===== 4. LEARN. PLAY. SHINE. (9.2 - 11.4): panels rise, one word each =====
-  const panels = [[9.15, SLATE, LIME, "Learn."], [9.85, LIME, SLATE, "Play."], [10.55, SLATE, LIME, "Shine."]];
+  const panels = [[9.1, SLATE, LIME, "Learn."], [9.85, LIME, SLATE, "Play."], [10.6, SLATE, LIME, "Shine."]];
   panels.forEach(([t0, bg, fg, word], i) => {
     const k = io(prog(t, t0, t0 + 0.32));
     if (k <= 0) return;
     const top = lerp(H, 0, k);
     rrect(0, top, W, H - top + 2, lerp(120, 0, k), bg);
     const next = panels[i + 1];
-    maskWord(word, CX, CY + 80, 230, 800, fg, t0 + 0.18, next ? next[0] + 0.05 : 11.15, t, { align: "center", stagger: 0.04, track: -6 });
+    maskWord(word, CX, CY + 80, 230, 800, fg, t0 + 0.18, next ? next[0] + 0.05 : 11.45, t, { align: "center", stagger: 0.04, track: -6 });
     if (word === "Shine.") {          // glint on the full stop
-      const g = sp(t, 10.85, S_UI) * (1 - io(prog(t, 11.1, 11.3)));
+      const g = sp(t, 10.95, S_UI) * (1 - io(prog(t, 11.35, 11.5)));
       if (g > 0) { ctx.save(); ctx.globalAlpha = g; ctx.strokeStyle = WHITE; ctx.lineWidth = 8; ctx.lineCap = "round";
         const gx = CX + 300, gy = CY - 70, L = 46 * g;
         ctx.beginPath(); ctx.moveTo(gx - L, gy); ctx.lineTo(gx + L, gy); ctx.moveTo(gx, gy - L); ctx.lineTo(gx, gy + L); ctx.stroke(); ctx.restore(); }
@@ -258,18 +258,18 @@ window.seek = async (t) => {
   });
 
   // ===== 5. LOCKUP (11.3 - 15): mark + wordmark, "Our app is now live!", stores =====
-  if (t >= 11.15) {
-    const m = sp(t, 11.25, S_TYPE);
-    const build = io(prog(t, 11.25, 11.75));
+  if (t >= 11.45) {
+    const m = sp(t, 11.55, S_TYPE);
+    const build = io(prog(t, 11.55, 12.05));
     const u = 150;
-    const slide = sp(t, 11.7, S_BOX);
-    const mx = lerp(CX, CX - 250, slide), my = CY - 120;
+    const slide = sp(t, 12.0, S_BOX);
+    const mx = lerp(CX, CX - 290, slide), my = CY - 120;
     ctx.save(); ctx.translate(mx, my); ctx.scale(m, m); mark(0, 0, u, build); ctx.restore();
-    ctx.save(); ctx.beginPath(); ctx.rect(mx + 120, 0, W, H); ctx.clip();
-    text("Glitter", lerp(mx - 140, mx + 150, slide), my + 62, 190, 700, WHITE, "left", clamp(slide * 1.4));
+    ctx.save(); ctx.beginPath(); ctx.rect(mx + 150, 0, W, H); ctx.clip();
+    text("Glitter", lerp(mx - 140, mx + 175, slide), my + 58, 170, 700, WHITE, "left", clamp(slide * 1.4));
     ctx.restore();
-    maskWord("Our app is now live!", CX, CY + 170, 76, 600, LIME, 12.15, null, t, { align: "center", stagger: 0.022 });
-    const st = sp(t, 12.6, S_UI);
+    maskWord("Our app is now live!", CX, CY + 170, 76, 600, LIME, 12.45, null, t, { align: "center", stagger: 0.022 });
+    const st = sp(t, 12.9, S_UI);
     [["App Store", -1], ["Google Play", 1]].forEach(([s, side]) => {
       const w = 330, x = CX + side * 175 - w / 2, y = CY + 270 + (1 - st) * 60;
       ctx.save(); ctx.globalAlpha = st;
