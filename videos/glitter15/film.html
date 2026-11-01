@@ -17,10 +17,9 @@
 <canvas id="c" width="1080" height="1920"></canvas>
 <div id="hud"></div>
 <script>
-// Spec ad for the Glitter golf-training app. Pure function of t (seconds) in window.seek(t).
-// Brand cues taken from the reference board: lime + deep slate, two-circle mark with a play triangle,
-// "Learn. Play. Shine.", "Our App Is Now Live!", "Easy access to training", "Personalized training experience".
-// App screens are an ILLUSTRATION (labelled on screen); no feature beyond the two above is claimed.
+// Spec ad for the Glitter golf-training app (v2: realistic 3D phone, unmasked text).
+// Pure function of t (seconds) in window.seek(t). App screens are an ILLUSTRATION (labelled on screen);
+// only the two features from the reference board are shown: easy access to training, personalized training.
 const W = 1080, H = 1920, CX = W / 2, CY = H / 2, T = 15;
 const LIME = "#b6f36c", SLATE = "#16282d", SLATE2 = "#22383e", WHITE = "#f6f8f4", INK = "#0e1a1d", RED = "#ff3b30";
 const ctx = document.getElementById("c").getContext("2d");
@@ -41,250 +40,375 @@ function spring(t, t0, k = 170, d = 26) {
   const wd = w * Math.sqrt(1 - z * z);
   return 1 - Math.exp(-z * w * x) * (Math.cos(wd * x) + (z * w / wd) * Math.sin(wd * x));
 }
-const S_UI = [320, 30], S_BOX = [170, 22], S_TYPE = [120, 20];
+const S_UI = [320, 30], S_BOX = [170, 22], S_TYPE = [120, 20], S_PHONE = [90, 15];
 const sp = (t, t0, s) => spring(t, t0, s[0], s[1]);
 const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const mix = (a, b, k) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], clamp(k)))).join(",")})`; };
 
-// ---------- drawing ----------
-function rrect(x, y, w, h, r, fill) {
+// ---------- drawing helpers (take a context so they work on- and off-screen) ----------
+function rrect(g, x, y, w, h, r, fill) {
   w = Math.max(0, w); h = Math.max(0, h); r = Math.max(0, Math.min(r, w / 2, h / 2));
-  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill();
+  g.beginPath(); g.roundRect(x, y, w, h, r); g.fillStyle = fill; g.fill();
 }
-function circle(x, y, r, fill) { ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill(); }
-function maskWord(str, x, y, size, weight, color, tIn, tOut, t, opts = {}) {
-  const stag = opts.stagger ?? 0.045, align = opts.align ?? "left", track = opts.track ?? 0;
+function circle(g, x, y, r, fill) { g.beginPath(); g.arc(x, y, Math.max(0, r), 0, Math.PI * 2); g.fillStyle = fill; g.fill(); }
+function text(g, str, x, y, size, weight, color, align = "left", alpha = 1) {
+  if (alpha <= 0) return;
+  g.save(); g.globalAlpha *= alpha; g.font = F(weight, size); g.fillStyle = color; g.textAlign = align; g.textBaseline = "alphabetic";
+  g.fillText(str, x, y); g.restore();
+}
+// Unmasked text reveal: each letter fades in, sharpens from a blur and settles up into place (no clip, no mask).
+function revealText(str, x, y, size, weight, color, tIn, tOut, t, opts = {}) {
+  const stag = opts.stagger ?? 0.035, align = opts.align ?? "left", track = opts.track ?? 0;
   ctx.font = F(weight, size);
   const chars = [...str], widths = chars.map(c => ctx.measureText(c).width);
   const total = widths.reduce((a, b) => a + b, 0) + track * (chars.length - 1);
   let x0 = align === "center" ? x - total / 2 : align === "right" ? x - total : x;
-  const asc = size * 0.8, desc = size * 0.28;
-  ctx.save(); ctx.beginPath(); ctx.rect(0, y - asc - size * .08, W, asc + desc + size * .16); ctx.clip();
-  ctx.fillStyle = color; ctx.textBaseline = "alphabetic";
   chars.forEach((c, i) => {
     const kin = sp(t, tIn + i * stag, S_UI);
-    const kout = tOut == null ? 0 : inn(prog(t, tOut + i * stag * .4, tOut + i * stag * .4 + .14));
-    const dy = (1 - kin) * size * 1.3 - kout * size * 1.3;
-    ctx.save(); ctx.translate(x0 + widths[i] / 2, y + dy); ctx.rotate((1 - kin) * 0.1);
-    ctx.fillText(c, -widths[i] / 2, 0); ctx.restore();
+    const e = tOut == null ? 0 : out(prog(t, tOut + i * stag * 0.4, tOut + i * stag * 0.4 + 0.22));
+    const a = clamp(kin * 1.25) * (1 - e);
+    if (a > 0.003 && c !== " ") {
+      const blur = Math.max(0, 1 - kin) * size * 0.09 + e * size * 0.07;
+      const dy = (1 - kin) * size * 0.32 - e * size * 0.22;
+      const sc = lerp(0.94, 1, clamp(kin));
+      ctx.save(); ctx.globalAlpha = a; if (blur > 0.4) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+      ctx.translate(x0 + widths[i] / 2, y + dy); ctx.scale(sc, sc);
+      ctx.font = F(weight, size); ctx.fillStyle = color; ctx.textBaseline = "alphabetic"; ctx.fillText(c, -widths[i] / 2, 0);
+      ctx.restore();
+    }
     x0 += widths[i] + track;
   });
-  ctx.restore();
-  return total;
 }
-function text(str, x, y, size, weight, color, align = "left", alpha = 1) {
-  ctx.save(); ctx.globalAlpha *= alpha; ctx.font = F(weight, size); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "alphabetic";
-  ctx.fillText(str, x, y); ctx.restore();
-}
-// golf ball: white disc, soft shading, dimples that slide with the roll angle
-function ball(x, y, r, roll, dimpleK = 1, fill = WHITE) {
-  ctx.save(); ctx.translate(x, y);
-  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = fill; ctx.fillRect(-r, -r, 2 * r, 2 * r);
+// golf ball with dimples that slide with the roll
+function ball(g, x, y, r, roll, dimpleK = 1, fill = WHITE) {
+  g.save(); g.translate(x, y);
+  g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.clip();
+  g.fillStyle = fill; g.fillRect(-r, -r, 2 * r, 2 * r);
   if (dimpleK > 0) {
     const s = r * 0.24, off = ((roll * r) % s + s) % s;
-    ctx.fillStyle = `rgba(14,26,29,${0.10 * dimpleK})`;
+    g.fillStyle = `rgba(14,26,29,${0.10 * dimpleK})`;
     for (let gy = -r - s; gy < r + s; gy += s * 0.86) for (let gx = -r - 2 * s; gx < r + 2 * s; gx += s) {
       const row = Math.round(gy / (s * .86)); const px = gx + off + (row % 2 ? s / 2 : 0);
       const d = Math.hypot(px, gy) / r; if (d > 0.96) continue;
       const rr = s * 0.28 * Math.sqrt(1 - d * d);
-      ctx.beginPath(); ctx.ellipse(px, gy, rr * Math.sqrt(1 - d * d) + rr * .2, rr, Math.atan2(gy, px), 0, Math.PI * 2); ctx.fill();
+      g.beginPath(); g.ellipse(px, gy, rr * Math.sqrt(1 - d * d) + rr * .2, rr, Math.atan2(gy, px), 0, Math.PI * 2); g.fill();
     }
   }
-  const g = ctx.createRadialGradient(-r * .35, -r * .4, r * .1, 0, 0, r * 1.05);
-  g.addColorStop(0, "rgba(255,255,255,0.25)"); g.addColorStop(0.7, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(14,26,29,0.22)");
-  ctx.fillStyle = g; ctx.fillRect(-r, -r, 2 * r, 2 * r);
-  ctx.restore();
+  const gr = g.createRadialGradient(-r * .35, -r * .4, r * .1, 0, 0, r * 1.05);
+  gr.addColorStop(0, "rgba(255,255,255,0.25)"); gr.addColorStop(0.7, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(14,26,29,0.22)");
+  g.fillStyle = gr; g.fillRect(-r, -r, 2 * r, 2 * r);
+  g.restore();
 }
-// Glitter mark (recreated from the reference board): big circle + small circle, play triangle in the small one.
-// k = build progress 0..1 (small circle and triangle grow in), u = size unit
-function mark(x, y, u, k = 1, col = LIME, tri = SLATE) {
+// Glitter mark (recreated from the reference board): big circle + small circle with a play triangle
+function mark(g, x, y, u, k = 1, col = LIME, tri = SLATE) {
   const a = clamp(k);
-  circle(x - u * 0.22, y - u * 0.05, u * 0.56, col);
+  circle(g, x - u * 0.22, y - u * 0.05, u * 0.56, col);
   const kb = out(prog(a, 0.15, 0.75));
-  circle(x + u * 0.42, y + u * 0.22, u * 0.36 * kb, col);
+  circle(g, x + u * 0.42, y + u * 0.22, u * 0.36 * kb, col);
   const kt = out(prog(a, 0.45, 1));
   if (kt > 0) {
     const tx = x + u * 0.44, ty = y + u * 0.22, s = u * 0.17 * kt;
-    ctx.beginPath(); ctx.moveTo(tx - s * 0.7, ty - s); ctx.lineTo(tx + s, ty); ctx.lineTo(tx - s * 0.7, ty + s); ctx.closePath();
-    ctx.fillStyle = tri; ctx.fill();
+    g.beginPath(); g.moveTo(tx - s * 0.7, ty - s); g.lineTo(tx + s, ty); g.lineTo(tx - s * 0.7, ty + s); g.closePath();
+    g.fillStyle = tri; g.fill();
   }
 }
-function icon(kind, x, y, s, col) {          // simple line icons for the dock
-  ctx.save(); ctx.translate(x, y); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = s * 0.11; ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.beginPath();
-  if (kind === "home") { ctx.moveTo(-s * .42, -s * .02); ctx.lineTo(0, -s * .4); ctx.lineTo(s * .42, -s * .02); ctx.moveTo(-s * .3, -s * .12); ctx.lineTo(-s * .3, s * .38); ctx.lineTo(s * .3, s * .38); ctx.lineTo(s * .3, -s * .12); ctx.stroke(); }
-  if (kind === "play") { ctx.arc(0, 0, s * .4, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-s * .1, -s * .16); ctx.lineTo(s * .18, 0); ctx.lineTo(-s * .1, s * .16); ctx.closePath(); ctx.fill(); }
-  if (kind === "plan") { [-.3, 0, .3].forEach(v => { ctx.moveTo(-s * .2, v * s); ctx.lineTo(s * .38, v * s); }); ctx.stroke(); [-.3, 0, .3].forEach(v => { ctx.beginPath(); ctx.arc(-s * .36, v * s, s * .05, 0, 7); ctx.fill(); }); }
-  if (kind === "user") { ctx.arc(0, -s * .14, s * .17, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, s * .42, s * .32, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+// the app icon: slate tile + mark (+ optional badge)
+function appIcon(g, cx, cy, s, markK = 1, badgeK = 0) {
+  g.save(); g.shadowColor = "rgba(14,26,29,0.28)"; g.shadowBlur = s * 0.15; g.shadowOffsetY = s * 0.075;
+  rrect(g, cx - s / 2, cy - s / 2, s, s, s * 0.235, SLATE); g.restore();
+  g.save(); g.strokeStyle = "rgba(246,248,244,0.16)"; g.lineWidth = Math.max(1.5, s * 0.012); g.beginPath(); g.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.235); g.stroke(); g.restore();
+  mark(g, cx + s * 0.04, cy, s * 0.42, markK);
+  if (badgeK > 0) {
+    const bx = cx + s / 2 - s * 0.035, by = cy - s / 2 + s * 0.035;
+    circle(g, bx, by, s * 0.13 * badgeK, RED);
+    text(g, "1", bx, by + s * 0.05 * badgeK, s * 0.15 * badgeK, 700, "#fff", "center");
+  }
+}
+function lineIcon(g, kind, x, y, s, col) {
+  g.save(); g.translate(x, y); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = s * 0.11; g.lineCap = "round"; g.lineJoin = "round";
+  g.beginPath();
+  if (kind === "home") { g.moveTo(-s * .42, -s * .02); g.lineTo(0, -s * .4); g.lineTo(s * .42, -s * .02); g.moveTo(-s * .3, -s * .12); g.lineTo(-s * .3, s * .38); g.lineTo(s * .3, s * .38); g.lineTo(s * .3, -s * .12); g.stroke(); }
+  if (kind === "play") { g.arc(0, 0, s * .4, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(-s * .1, -s * .16); g.lineTo(s * .18, 0); g.lineTo(-s * .1, s * .16); g.closePath(); g.fill(); }
+  if (kind === "plan") { [-.3, 0, .3].forEach(v => { g.moveTo(-s * .2, v * s); g.lineTo(s * .38, v * s); }); g.stroke(); [-.3, 0, .3].forEach(v => { g.beginPath(); g.arc(-s * .36, v * s, s * .05, 0, 7); g.fill(); }); }
+  if (kind === "user") { g.arc(0, -s * .14, s * .17, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, s * .42, s * .32, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
+  g.restore();
+}
+// generic frosted home-screen icons (no third-party brands)
+function homeIcon(g, kind, cx, cy, s) {
+  rrect(g, cx - s / 2, cy - s / 2, s, s, s * 0.235, "rgba(246,248,244,0.16)");
+  g.save(); g.strokeStyle = WHITE; g.fillStyle = WHITE; g.lineWidth = s * 0.06; g.lineCap = "round";
+  if (kind === "cal") { text(g, "31", cx, cy + s * 0.2, s * 0.46, 600, WHITE, "center"); text(g, "MON", cx, cy - s * 0.2, s * 0.15, 600, LIME, "center"); }
+  if (kind === "clock") { g.beginPath(); g.arc(cx, cy, s * 0.3, 0, 7); g.stroke(); g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy - s * 0.2); g.moveTo(cx, cy); g.lineTo(cx + s * 0.14, cy + s * 0.06); g.stroke(); }
+  if (kind === "weather") { circle(g, cx + s * 0.1, cy - s * 0.08, s * 0.16, LIME); rrect(g, cx - s * 0.28, cy - s * 0.02, s * 0.5, s * 0.22, s * 0.11, WHITE); }
+  if (kind === "notes") { [-.12, .02, .16].forEach(v => { g.beginPath(); g.moveTo(cx - s * 0.22, cy + v * s); g.lineTo(cx + s * 0.22, cy + v * s); g.stroke(); }); }
+  if (kind === "photos") { circle(g, cx - s * 0.1, cy - s * 0.05, s * 0.16, "rgba(182,243,108,0.9)"); circle(g, cx + s * 0.1, cy + s * 0.05, s * 0.16, "rgba(246,248,244,0.75)"); }
+  if (kind === "mail") { g.strokeRect(cx - s * 0.26, cy - s * 0.17, s * 0.52, s * 0.34); g.beginPath(); g.moveTo(cx - s * 0.26, cy - s * 0.17); g.lineTo(cx, cy + s * 0.04); g.lineTo(cx + s * 0.26, cy - s * 0.17); g.stroke(); }
+  if (kind === "msg") { rrect(g, cx - s * 0.26, cy - s * 0.2, s * 0.52, s * 0.34, s * 0.12, WHITE); }
+  if (kind === "camera") { g.strokeRect(cx - s * 0.26, cy - s * 0.15, s * 0.52, s * 0.32); g.beginPath(); g.arc(cx, cy + s * 0.01, s * 0.1, 0, 7); g.stroke(); }
+  g.restore();
+}
+
+// ---------- the phone: drawn flat off-screen, then projected in 3D ----------
+const PW = 600, PHH = 1240, BEZ = 16, SW = PW - 2 * BEZ, SH = PHH - 2 * BEZ, BODY_R = 96, SCR_R = 80, DEPTH = 46;
+const phoneCv = document.createElement("canvas"); phoneCv.width = PW; phoneCv.height = PHH;
+const pg = phoneCv.getContext("2d");
+const SLOT = { x: BEZ + 40 + 61 + 2 * 122, y: BEZ + 400 + 170, s: 100 };      // Glitter icon on the home screen (phone coords, centre)
+
+function drawPhoneFlat(t, st) {
+  const g = pg; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, PW, PHH);
+  // titanium band
+  const band = g.createLinearGradient(0, 0, PW, 0);
+  band.addColorStop(0, "#5d6466"); band.addColorStop(0.04, "#c9ced0"); band.addColorStop(0.1, "#7b8285");
+  band.addColorStop(0.9, "#7b8285"); band.addColorStop(0.96, "#c9ced0"); band.addColorStop(1, "#5d6466");
+  rrect(g, 0, 0, PW, PHH, BODY_R, band);
+  rrect(g, 5, 5, PW - 10, PHH - 10, BODY_R - 5, "#050708");            // black glass border
+  // screen
+  g.save(); g.beginPath(); g.roundRect(BEZ, BEZ, SW, SH, SCR_R); g.clip(); g.translate(BEZ, BEZ);
+  drawScreen(g, t, st);
+  g.restore();
+  // dynamic island + camera
+  rrect(g, PW / 2 - 92, BEZ + 22, 184, 54, 27, "#020304");
+  circle(g, PW / 2 + 56, BEZ + 49, 11, "#0d1a2a"); circle(g, PW / 2 + 53, BEZ + 46, 3.5, "rgba(120,160,255,0.5)");
+  // glass reflection: a soft diagonal sheen that slides as the phone turns
+  g.save(); g.beginPath(); g.roundRect(BEZ, BEZ, SW, SH, SCR_R); g.clip();
+  const sx = PW * (0.15 + st.rotY / 90);
+  const sh = g.createLinearGradient(sx - 300, 0, sx + 300, PHH * 0.6);
+  sh.addColorStop(0, "rgba(255,255,255,0)"); sh.addColorStop(0.5, "rgba(255,255,255,0.10)"); sh.addColorStop(0.52, "rgba(255,255,255,0.04)"); sh.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = sh; g.fillRect(0, 0, PW, PHH); g.restore();
+}
+function statusBar(g, t, col = WHITE) {
+  text(g, "9:41", 66, 62, 30, 600, col);
+  for (let i = 0; i < 4; i++) rrect(g, SW - 168 + i * 11, 54 - (i + 1) * 5.5, 7, (i + 1) * 5.5 + 2, 2, col);
+  g.save(); g.strokeStyle = col; g.lineWidth = 3.5; g.lineCap = "round";
+  for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(SW - 104, 60, 6 + i * 7, Math.PI * 1.25, Math.PI * 1.75); g.stroke(); }
+  g.restore();
+  g.save(); g.strokeStyle = col; g.globalAlpha = 0.6; g.lineWidth = 2.5; g.beginPath(); g.roundRect(SW - 82, 40, 44, 22, 7); g.stroke(); g.restore();
+  rrect(g, SW - 79, 43, 34, 16, 4, col);
+}
+function drawScreen(g, t, st) {
+  // ---- home screen ----
+  const wall = g.createLinearGradient(0, 0, SW, SH);
+  wall.addColorStop(0, "#1e3a3a"); wall.addColorStop(1, "#0d1a1d");
+  g.fillStyle = wall; g.fillRect(0, 0, SW, SH);
+  circle(g, SW * 0.8, SH * 0.25, 260, "rgba(182,243,108,0.10)");
+  circle(g, SW * 0.15, SH * 0.78, 200, "rgba(182,243,108,0.06)");
+  const apps = [["cal", "Calendar"], ["clock", "Clock"], ["weather", "Weather"], ["notes", "Notes"], ["photos", "Photos"], ["camera", "Camera"], [null, "Glitter"], ["msg", "Messages"]];
+  apps.forEach(([k, label], i) => {
+    const col = i % 4, row = Math.floor(i / 4);
+    const cx = 40 + 61 + col * 122, cy = 400 + row * 170;
+    if (k) homeIcon(g, k, cx, cy, 100);
+    text(g, label, cx, cy + 80, 21, 500, "rgba(246,248,244,0.85)", "center");
+  });
+  // the Glitter icon lands in its slot (drawn by the main canvas while it flies, then here)
+  const sx = SLOT.x - BEZ, sy = SLOT.y - BEZ;
+  if (st.iconInPhone) {
+    const press = st.press;                                     // tap: quick dip and release
+    appIcon(g, sx, sy, SLOT.s * (1 - 0.1 * press), 1, st.badge);
+    if (st.tap > 0) { g.save(); g.globalAlpha = 0.35 * (1 - st.tap); circle(g, sx, sy, 30 + 70 * st.tap, WHITE); g.restore(); }
+  }
+  rrect(g, 30, SH - 170, SW - 60, 130, 44, "rgba(246,248,244,0.14)");   // dock
+  ["mail", "msg", "camera", "photos"].forEach((k, i) => homeIcon(g, k, 30 + (SW - 60) * (i + 0.5) / 4, SH - 105, 96));
+  // ---- the app opens from the icon (iOS-style zoom) ----
+  if (st.open > 0) {
+    const o = st.open;
+    const w = lerp(SLOT.s, SW, o), h = lerp(SLOT.s, SH, o), x = lerp(sx - SLOT.s / 2, 0, o), y = lerp(sy - SLOT.s / 2, 0, o);
+    g.save(); g.beginPath(); g.roundRect(x, y, w, h, lerp(SLOT.s * 0.235, SCR_R, o)); g.clip();
+    g.fillStyle = SLATE; g.fillRect(x, y, w, h);
+    const cx1 = lerp(sx + SLOT.s * 0.04, SW / 2, o), cy1 = lerp(sy, SH * 0.45, o);
+    mark(g, lerp(cx1, 74, st.header), lerp(cy1, 150, st.header), lerp(lerp(SLOT.s * 0.42, 120, o), 46, st.header), 1);
+    if (st.header > 0) drawApp(g, t, st);
+    g.restore();
+  }
+  statusBar(g, t);
+}
+function drawApp(g, t, st) {
+  const ui = (t0) => sp(t, t0, S_UI);
+  text(g, "Glitter", 120, 166, 46, 700, WHITE, "left", out(prog(t, 5.55, 5.8)));
+  text(g, "Illustration", SW - 40, 166, 26, 500, "rgba(246,248,244,0.55)", "right", out(prog(t, 5.6, 5.9)));
+  const swap = io(prog(t, 7.1, 7.45));
+  // page A: easy access to training
+  g.save(); g.translate(-swap * SW, 0);
+  const a1 = ui(5.6);
+  text(g, "Today's training", 50, 290 + (1 - a1) * 40, 58, 700, WHITE, "left", clamp(a1));
+  const cards = [["Putting", "12 min", LIME, SLATE], ["Chipping", "8 min", SLATE2, WHITE], ["Driving range", "15 min", SLATE2, WHITE], ["Bunker shots", "10 min", SLATE2, WHITE]];
+  cards.forEach(([n, d, bg, fg], i) => {
+    const k = ui(5.72 + i * 0.07), cy = 360 + i * 170 + (1 - k) * 80;
+    g.save(); g.globalAlpha *= clamp(k);
+    rrect(g, 40, cy, SW - 80, 146, 34, bg);
+    text(g, n, 80, cy + 66, 40, 600, fg); text(g, d, 80, cy + 112, 28, 400, i === 0 ? SLATE : "rgba(246,248,244,0.6)");
+    circle(g, SW - 110, cy + 73, 38, i === 0 ? SLATE : LIME);
+    g.beginPath(); const px = SW - 110, py = cy + 73; g.moveTo(px - 9, py - 15); g.lineTo(px + 15, py); g.lineTo(px - 9, py + 15); g.closePath(); g.fillStyle = i === 0 ? LIME : SLATE; g.fill();
+    g.restore();
+  });
+  g.restore();
+  // page B: personalized plan
+  g.save(); g.translate((1 - swap) * SW, 0);
+  text(g, "Your plan", 50, 290, 58, 700, WHITE);
+  text(g, "Built around your level", 50, 340, 30, 400, "rgba(246,248,244,0.6)");
+  ["Warm-up routine", "Short game focus", "Putting under pressure", "Review your swing"].forEach((s, i) => {
+    const k = sp(t, 7.4 + i * 0.09, S_UI), cy = 410 + i * 150 + (1 - k) * 60;
+    g.save(); g.globalAlpha *= clamp(k);
+    rrect(g, 40, cy, SW - 80, 126, 32, SLATE2);
+    const done = i < 2;
+    circle(g, 104, cy + 63, 26, done ? LIME : "rgba(246,248,244,0.15)");
+    if (done) { g.save(); g.strokeStyle = SLATE; g.lineWidth = 6; g.lineCap = "round"; g.beginPath(); g.moveTo(92, cy + 64); g.lineTo(101, cy + 73); g.lineTo(117, cy + 54); g.stroke(); g.restore(); }
+    text(g, s, 152, cy + 76, 34, 500, WHITE);
+    g.restore();
+  });
+  g.restore();
+  // floating dock with a sliding pill + a real tap on the second tab
+  const dk = ui(5.9), dy = SH - 150 + (1 - dk) * 200, dw = SW - 120, dx = 60;
+  rrect(g, dx, dy, dw, 110, 55, "rgba(5,9,10,0.88)");
+  const slot = dw / 4, pos = io(prog(t, 6.95, 7.25));
+  rrect(g, dx + 10 + slot * pos, dy + 10, slot - 20, 90, 45, LIME);
+  ["home", "play", "plan", "user"].forEach((k, i) => {
+    const on = i === 0 ? 1 - pos : i === 1 ? pos : 0;
+    lineIcon(g, k, dx + slot * (i + 0.5), dy + 55, 46, mix("#f6f8f4", SLATE, on));
+  });
+  const tap = prog(t, 6.85, 7.25);
+  if (tap > 0 && tap < 1) { g.save(); g.globalAlpha = 0.35 * (1 - tap); circle(g, dx + slot * 1.5, dy + 55, 26 + 60 * out(tap), WHITE); g.restore(); }
+}
+
+// project the flat phone with a real perspective turn around its vertical axis (+ roll and scale)
+function drawPhone3D(cx, cy, scale, rotY, rotZ, alpha = 1) {
+  const th = rotY * Math.PI / 180, f = 2400, cos = Math.cos(th), sin = Math.sin(th);
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx, cy); ctx.rotate(rotZ * Math.PI / 180); ctx.scale(scale, scale);
+  // contact + ambient shadow
+  ctx.save(); ctx.filter = "blur(38px)"; ctx.globalAlpha = 0.32 * alpha; ctx.fillStyle = INK;
+  ctx.beginPath(); ctx.roundRect(-PW * 0.42 * Math.abs(cos) + 30, -PHH / 2 + 70, PW * 0.84 * Math.abs(cos), PHH, 90); ctx.fill(); ctx.restore();
+  // side band (the phone's thickness) on the edge that faces us
+  const edgeX = (sin > 0 ? -1 : 1) * PW / 2;
+  const pz = edgeX * sin, pe = f / (f + pz), ex = edgeX * cos * pe;
+  const bandW = DEPTH * Math.abs(sin) * pe;
+  if (bandW > 0.5) {
+    const bx = sin > 0 ? ex - bandW : ex;
+    const gb = ctx.createLinearGradient(bx, 0, bx + bandW, 0);
+    gb.addColorStop(0, "#6e7578"); gb.addColorStop(0.5, "#c3c8ca"); gb.addColorStop(1, "#5a6164");
+    rrect(ctx, bx, -PHH / 2 * pe + 40 * pe, bandW, PHH * pe - 80 * pe, bandW / 2, gb);
+    // side buttons on the visible band
+    const btns = sin > 0 ? [[0.17, 0.05], [0.25, 0.09], [0.36, 0.09]] : [[0.27, 0.15]];
+    btns.forEach(([p, l]) => rrect(ctx, bx - 4, (-PHH / 2 + PHH * p) * pe, bandW + 8, PHH * l * pe, 4, "#9aa1a4"));
+  }
+  // the front, column by column with perspective
+  const STEP = 3;
+  for (let u = 0; u < PW; u += STEP) {
+    const X = u - PW / 2, z = X * sin, p = f / (f + z);
+    const x = X * cos * p, w = STEP * cos * p + 0.8;
+    if (w <= 0) continue;
+    ctx.drawImage(phoneCv, u, 0, STEP, PHH, x, -PHH / 2 * p, w, PHH * p);
+  }
   ctx.restore();
 }
 
+// where a point of the flat phone lands on screen (same projection as drawPhone3D)
+function projectPoint(px, py, rotY, rotZ, cy) {
+  const th = rotY * Math.PI / 180, f = 2400, X = px - PW / 2, Y = py - PHH / 2, z = X * Math.sin(th), p = f / (f + z);
+  const x = X * Math.cos(th) * p, y = Y * p, r = rotZ * Math.PI / 180;
+  return { x: CX + x * Math.cos(r) - y * Math.sin(r), y: cy + x * Math.sin(r) + y * Math.cos(r), k: p * Math.cos(th) };
+}
+
 // ---------- layout ----------
-const LEFT = 96;
-const GROUND = 1240;
-const ICON_Y = CY - 120, ICON_S = 400;
-const PH_W = 580, PH_H = 1200, PH_X = CX - PH_W / 2, PH_Y = 650, BEZ = 18;   // phone body; text above it stays in the safe zone
+const LEFT = 96, GROUND = 1240, ICON_Y = CY - 120, ICON_S = 400;
+const PH_CY = 1260;                                   // phone centre at rest (top edge ~640, text above stays in the safe zone)
 
 window.seek = async (t) => {
   t = clamp(t, 0, T);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = "none";
   ctx.fillStyle = LIME; ctx.fillRect(0, 0, W, H);
 
-  // ===== 1. HOOK (0 - 2.4): a ball rolls in and stops; "Iconic golf / starts here." =====
+  // ===== 1-3. ball -> icon -> mark (0 - 4.5) =====
   const rollK = out5(prog(t, 0, 1.0));
-  const bx1 = lerp(-140, CX + 170, rollK);
-  const roll = (bx1 + 140) / 120;
-  // ===== 2. ICON (2.4 - 4.7): the ball rises and becomes the mark inside the app icon =====
-  const rise = sp(t, 2.35, S_BOX);
-  const iconK = sp(t, 2.42, S_BOX);
-  const markK = io(prog(t, 2.75, 3.35));
-  // ===== 3. PHONE (4.7 - 9.2): the icon opens into the app screen =====
-  const open = io(prog(t, 4.6, 5.15));
-  const phoneOut = inn(prog(t, 9.1, 9.42));
+  const bx1 = lerp(-140, CX + 170, rollK), roll = (bx1 + 140) / 120;
+  const rise = sp(t, 2.35, S_BOX), iconK = sp(t, 2.42, S_BOX);
+  const markK = io(prog(t, 2.75, 3.35)), toMark = io(prog(t, 2.68, 3.0));
+  const badge = sp(t, 3.55, S_UI);
+  // ===== 4. phone (4.3 - 9.4) =====
+  const enter = sp(t, 4.25, S_PHONE);                          // phone rises from below, turned, and settles face-on
+  const turn1 = io(prog(t, 6.85, 7.5)), turn2 = io(prog(t, 8.3, 8.9));
+  const exitK = inn(prog(t, 9.05, 9.45));
+  const rotY = lerp(-34, 0, enter) + turn1 * 10 - turn2 * 10 + exitK * -78;
+  const rotZ = lerp(-7, 0, enter) + exitK * -6;
+  const pcy = lerp(PH_CY + 1300, PH_CY, enter) + exitK * 1300;
+  const fly = io(prog(t, 4.45, 4.95));                          // icon flies into its home-screen slot
+  const iconInPhone = t >= 4.95;
+  const press = Math.sin(Math.PI * prog(t, 5.0, 5.18));
+  const tapK = prog(t, 5.02, 5.4);
+  const open = io(prog(t, 5.15, 5.55)), header = io(prog(t, 5.4, 5.75));
 
-  if (t < 9.45) {
-    // ball / mark position
-    const bx = lerp(bx1, CX - 0, rise), by = lerp(GROUND - 110, ICON_Y, rise);
-    const br = lerp(110, ICON_S * 0.2, rise);
-    // shadow on the ground while rolling
+  if (t < 4.95) {
+    const bx = lerp(bx1, CX, rise), by = lerp(GROUND - 110, ICON_Y, rise), br = lerp(110, ICON_S * 0.2, rise);
     if (rise < 1) { ctx.save(); ctx.globalAlpha = 0.18 * (1 - rise); ctx.beginPath(); ctx.ellipse(bx, GROUND + 4, br * 0.9, br * 0.16, 0, 0, 7); ctx.fillStyle = INK; ctx.fill(); ctx.restore(); }
-    // app icon tile grows behind the ball, then opens into the phone
-    const tileS = ICON_S * iconK;
-    let tx = bx - tileS / 2, ty = by - tileS / 2, tw = tileS, th = tileS, tr = tileS * 0.24;   // the tile grows around the ball
-    const dropY = phoneOut * 1400;
-    tx = lerp(tx, PH_X, open); ty = lerp(ty, PH_Y, open) + dropY; tw = lerp(tw, PH_W, open); th = lerp(th, PH_H, open); tr = lerp(tr, 92, open);
+    if (t >= 4.25) drawPhoneFrame(t, rotY, rotZ, pcy, { iconInPhone: false, press: 0, tap: 0, badge: 0, open: 0, header: 0 });
+    // the icon (tile grows around the ball, then flies into the phone's slot)
+    const s0 = ICON_S * iconK;
+    const P = projectPoint(SLOT.x, SLOT.y, rotY, rotZ, pcy);
+    const tgtX = P.x, tgtY = P.y;
+    const icx = lerp(bx, tgtX, fly), icy = lerp(by, tgtY, fly) - Math.sin(Math.PI * fly) * 80, isz = lerp(s0, SLOT.s * P.k, fly);
     if (iconK > 0.001) {
       ctx.save(); ctx.shadowColor = "rgba(14,26,29,0.28)"; ctx.shadowBlur = 60 * iconK; ctx.shadowOffsetY = 30 * iconK;
-      rrect(tx, ty, tw, th, tr, open > 0 ? mix(SLATE, "#0d1316", open) : SLATE); ctx.restore();
-      if (open > 0) {                             // screen inside the body
-        rrect(tx + BEZ, ty + BEZ, tw - 2 * BEZ, th - 2 * BEZ, tr - BEZ, SLATE);
-      }
+      rrect(ctx, icx - isz / 2, icy - isz / 2, isz, isz, isz * 0.235, SLATE); ctx.restore();
     }
-    // the ball turns lime and becomes the big circle of the mark; the mark then shrinks into the app header
-    const toMark = io(prog(t, 2.68, 3.0));
-    if (open <= 0) {
-      if (toMark < 1) ball(bx, by, br, roll, 1 - toMark, mix(WHITE, LIME, toMark));
-      if (toMark > 0) mark(bx + ICON_S * 0.04 * rise, by, ICON_S * 0.42 * (iconK > 0 ? 1 : 0), markK);
-      // notification badge
-      const badge = sp(t, 3.55, S_UI);
-      if (badge > 0) {
-        const bxr = tx + tw - 14, byr = ty + 14;
-        circle(bxr, byr, 52 * badge, RED);
-        text("1", bxr, byr + 20 * badge, 60 * badge, 700, "#fff", "center");
-      }
-    } else {
-      // ===== app screen (illustration) =====
-      const sx = tx + BEZ, sy = ty + BEZ, sw = tw - 2 * BEZ;
-      ctx.save(); ctx.beginPath(); ctx.roundRect(sx, sy, sw, th - 2 * BEZ, tr - BEZ); ctx.clip();
-      const ui = (t0) => sp(t, t0, S_UI);
-      // header mark travels from the icon centre to the top-left of the screen
-      const hk = io(prog(t, 4.6, 5.15));
-      const mx = lerp(CX + ICON_S * 0.04, sx + 74, hk), my = lerp(ICON_Y, sy + 150, hk) ;
-      mark(mx, my, lerp(ICON_S * 0.42, 46, hk), 1);
-      text("Glitter", sx + 120, sy + 166, 46, 700, WHITE, "left", out(prog(t, 5.0, 5.3)));
-      text("9:41", sx + 60, sy + 64, 30, 600, WHITE, "left", out(prog(t, 4.9, 5.2)));
-      rrect(sx + sw / 2 - 90, sy + 22, 180, 52, 26, "#05090a");          // dynamic island
-      text("Illustration", sx + sw - 40, sy + 166, 26, 500, "rgba(246,248,244,0.55)", "right", out(prog(t, 5.2, 5.5)));
-      const swap = io(prog(t, 7.05, 7.4));                                // training list -> personal plan
-      // --- page A: easy access to training
-      ctx.save(); ctx.translate(-swap * sw, 0); ctx.globalAlpha = 1 - swap * .6;
-      const a1 = ui(5.15);
-      text("Today's training", sx + 50, sy + 290 + (1 - a1) * 40, 58, 700, WHITE, "left", a1);
-      const cards = [["Putting", "12 min", LIME, SLATE], ["Chipping", "8 min", SLATE2, WHITE], ["Driving range", "15 min", SLATE2, WHITE], ["Bunker shots", "10 min", SLATE2, WHITE]];
-      cards.forEach(([n, d, bg, fg], i) => {
-        const k = ui(5.3 + i * 0.07); const cy = sy + 360 + i * 170 + (1 - k) * 80;
-        ctx.save(); ctx.globalAlpha *= k;
-        rrect(sx + 40, cy, sw - 80, 146, 34, bg);
-        text(n, sx + 80, cy + 66, 40, 600, fg); text(d, sx + 80, cy + 112, 28, 400, i === 0 ? SLATE : "rgba(246,248,244,0.6)");
-        circle(sx + sw - 110, cy + 73, 38, i === 0 ? SLATE : LIME);
-        ctx.beginPath(); const px = sx + sw - 110, py = cy + 73; ctx.moveTo(px - 9, py - 15); ctx.lineTo(px + 15, py); ctx.lineTo(px - 9, py + 15); ctx.closePath(); ctx.fillStyle = i === 0 ? LIME : SLATE; ctx.fill();
-        ctx.restore();
-      });
-      ctx.restore();
-      // --- page B: personalized plan
-      ctx.save(); ctx.translate((1 - swap) * sw, 0); ctx.globalAlpha = 0.4 + swap * .6;
-      text("Your plan", sx + 50, sy + 290, 58, 700, WHITE);
-      text("Built around your level", sx + 50, sy + 340, 30, 400, "rgba(246,248,244,0.6)");
-      const steps = ["Warm-up routine", "Short game focus", "Putting under pressure", "Review your swing"];
-      steps.forEach((s, i) => {
-        const k = sp(t, 7.35 + i * 0.09, S_UI), cy = sy + 410 + i * 150;
-        ctx.save(); ctx.globalAlpha *= k;
-        rrect(sx + 40, cy + (1 - k) * 60, sw - 80, 126, 32, SLATE2);
-        const done = i < 2;
-        circle(sx + 104, cy + 63 + (1 - k) * 60, 26, done ? LIME : "rgba(246,248,244,0.15)");
-        if (done) { ctx.save(); ctx.strokeStyle = SLATE; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(sx + 92, cy + 64 + (1 - k) * 60); ctx.lineTo(sx + 101, cy + 73 + (1 - k) * 60); ctx.lineTo(sx + 117, cy + 54 + (1 - k) * 60); ctx.stroke(); ctx.restore(); }
-        text(s, sx + 152, cy + 76 + (1 - k) * 60, 34, 500, WHITE);
-        ctx.restore();
-      });
-      ctx.restore();
-      // floating dock with a sliding pill (reference board: floating / pill highlight nav)
-      const dk = ui(5.55), dy = sy + th - 2 * BEZ - 150 + (1 - dk) * 200;
-      const dw = sw - 120, dx = sx + 60;
-      rrect(dx, dy, dw, 110, 55, "rgba(5,9,10,0.85)");
-      const slot = dw / 4, pos = io(prog(t, 6.85, 7.15));
-      rrect(dx + 10 + slot * pos, dy + 10, slot - 20, 90, 45, LIME);
-      ["home", "play", "plan", "user"].forEach((k, i) => {
-        const on = i === 0 ? 1 - pos : i === 1 ? pos : 0;
-        icon(k, dx + slot * (i + 0.5), dy + 55, 46, mix("#f6f8f4", SLATE, on));
-      });
-      ctx.restore();
-    }
-    // copy around the hero
-    maskWord("Iconic golf", LEFT, 640, 150, 700, INK, 0.75, 2.2, t);
-    maskWord("starts here.", LEFT, 800, 150, 700, INK, 0.85, 2.25, t);
-    maskWord("Now on your phone.", CX, 1420, 84, 600, INK, 3.0, 4.45, t, { align: "center", stagger: 0.025 });
-    maskWord("Easy access", LEFT, 470, 92, 700, INK, 5.35, 6.95, t);
-    maskWord("to training", LEFT, 570, 92, 700, INK, 5.45, 7.0, t);
-    maskWord("Personalized", LEFT, 470, 92, 700, INK, 7.25, 9.0, t);
-    maskWord("training", LEFT, 570, 92, 700, INK, 7.35, 9.05, t);
+    if (toMark < 1) ball(ctx, icx, icy, br * lerp(1, SLOT.s / ICON_S, fly), roll, 1 - toMark, mix(WHITE, LIME, toMark));
+    if (toMark > 0 && iconK > 0) mark(ctx, icx + isz * 0.04 * rise, icy, isz * 0.42, markK);
+    if (badge > 0) { const r = isz * 0.13 * badge, bxr = icx + isz / 2 - isz * 0.035, byr = icy - isz / 2 + isz * 0.035; circle(ctx, bxr, byr, r, RED); text(ctx, "1", bxr, byr + r * 0.38, r * 1.15, 700, "#fff", "center"); }
+  } else if (t < 9.5) {
+    drawPhoneFrame(t, rotY, rotZ, pcy, { iconInPhone, press, tap: tapK, badge: 1 - open, open, header });
   }
 
-  // ===== 4. LEARN. PLAY. SHINE. (9.2 - 11.4): panels rise, one word each =====
+  // copy (unmasked reveals)
+  revealText("Iconic golf", LEFT, 640, 150, 700, INK, 0.7, 2.15, t);
+  revealText("starts here.", LEFT, 800, 150, 700, INK, 0.82, 2.2, t);
+  revealText("Now on your phone.", CX, 1420, 84, 600, INK, 3.0, 4.2, t, { align: "center", stagger: 0.02 });
+  revealText("Easy access", LEFT, 470, 92, 700, INK, 5.6, 6.95, t);
+  revealText("to training", LEFT, 570, 92, 700, INK, 5.7, 7.0, t);
+  revealText("Personalized", LEFT, 470, 92, 700, INK, 7.25, 8.95, t);
+  revealText("training", LEFT, 570, 92, 700, INK, 7.35, 9.0, t);
+
+  // ===== 5. LEARN. PLAY. SHINE. (9.1 - 11.5) =====
   const panels = [[9.1, SLATE, LIME, "Learn."], [9.85, LIME, SLATE, "Play."], [10.6, SLATE, LIME, "Shine."]];
   panels.forEach(([t0, bg, fg, word], i) => {
     const k = io(prog(t, t0, t0 + 0.32));
     if (k <= 0) return;
     const top = lerp(H, 0, k);
-    rrect(0, top, W, H - top + 2, lerp(120, 0, k), bg);
+    rrect(ctx, 0, top, W, H - top + 2, lerp(120, 0, k), bg);
     const next = panels[i + 1];
-    maskWord(word, CX, CY + 80, 230, 800, fg, t0 + 0.18, next ? next[0] + 0.05 : 11.45, t, { align: "center", stagger: 0.04, track: -6 });
-    if (word === "Shine.") {          // glint on the full stop
-      const g = sp(t, 10.95, S_UI) * (1 - io(prog(t, 11.35, 11.5)));
-      if (g > 0) { ctx.save(); ctx.globalAlpha = g; ctx.strokeStyle = WHITE; ctx.lineWidth = 8; ctx.lineCap = "round";
-        const gx = CX + 300, gy = CY - 70, L = 46 * g;
+    revealText(word, CX, CY + 80, 230, 800, fg, t0 + 0.16, next ? next[0] + 0.02 : 11.4, t, { align: "center", stagger: 0.035, track: -6 });
+    if (word === "Shine.") {
+      const gl = sp(t, 10.95, S_UI) * (1 - io(prog(t, 11.3, 11.45)));
+      if (gl > 0) { ctx.save(); ctx.globalAlpha = clamp(gl); ctx.strokeStyle = WHITE; ctx.lineWidth = 8; ctx.lineCap = "round";
+        const gx = CX + 300, gy = CY - 70, L = 46 * gl;
         ctx.beginPath(); ctx.moveTo(gx - L, gy); ctx.lineTo(gx + L, gy); ctx.moveTo(gx, gy - L); ctx.lineTo(gx, gy + L); ctx.stroke(); ctx.restore(); }
     }
   });
 
-  // ===== 5. LOCKUP (11.3 - 15): mark + wordmark, "Our app is now live!", stores =====
+  // ===== 6. LOCKUP (11.45 - 15) =====
   if (t >= 11.45) {
-    const m = sp(t, 11.55, S_TYPE);
-    const build = io(prog(t, 11.55, 12.05));
-    const u = 150;
-    const slide = sp(t, 12.0, S_BOX);
+    const m = sp(t, 11.55, S_TYPE), build = io(prog(t, 11.55, 12.05)), slide = sp(t, 12.0, S_BOX);
     const mx = lerp(CX, CX - 290, slide), my = CY - 120;
-    ctx.save(); ctx.translate(mx, my); ctx.scale(m, m); mark(0, 0, u, build); ctx.restore();
-    ctx.save(); ctx.beginPath(); ctx.rect(mx + 150, 0, W, H); ctx.clip();
-    text("Glitter", lerp(mx - 140, mx + 175, slide), my + 58, 170, 700, WHITE, "left", clamp(slide * 1.4));
-    ctx.restore();
-    maskWord("Our app is now live!", CX, CY + 170, 76, 600, LIME, 12.45, null, t, { align: "center", stagger: 0.022 });
+    ctx.save(); ctx.translate(mx, my); ctx.scale(m, m); mark(ctx, 0, 0, 150, build); ctx.restore();
+    revealText("Glitter", mx + 175, my + 58, 170, 700, WHITE, 12.05, null, t, { stagger: 0.04 });
+    revealText("Our app is now live!", CX, CY + 170, 76, 600, LIME, 12.45, null, t, { align: "center", stagger: 0.02 });
     const st = sp(t, 12.9, S_UI);
     [["App Store", -1], ["Google Play", 1]].forEach(([s, side]) => {
       const w = 330, x = CX + side * 175 - w / 2, y = CY + 270 + (1 - st) * 60;
-      ctx.save(); ctx.globalAlpha = st;
-      rrect(x, y, w, 100, 50, "rgba(246,248,244,0.1)");
+      ctx.save(); ctx.globalAlpha = clamp(st);
+      rrect(ctx, x, y, w, 100, 50, "rgba(246,248,244,0.1)");
       ctx.strokeStyle = "rgba(246,248,244,0.35)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(x, y, w, 100, 50); ctx.stroke();
-      text(s, x + w / 2, y + 63, 40, 600, WHITE, "center");
+      text(ctx, s, x + w / 2, y + 63, 40, 600, WHITE, "center");
       ctx.restore();
     });
   }
   return true;
 };
+function drawPhoneFrame(t, rotY, rotZ, pcy, st) {
+  st.rotY = rotY;
+  drawPhoneFlat(t, st);
+  drawPhone3D(CX, pcy, 1, rotY, rotZ);
+}
 
 // ---------- boot + preview HUD ----------
 (async () => {
-  await document.fonts.load(F(700, 100)); await document.fonts.load(F(400, 100)); await document.fonts.ready;
+  await document.fonts.load(F(700, 100)); await document.fonts.load(F(400, 100)); await document.fonts.load(F(800, 100)); await document.fonts.ready;
   const q = new URLSearchParams(location.search);
   await window.seek(parseFloat(q.get("t") || "0"));
   window.ready = true;
