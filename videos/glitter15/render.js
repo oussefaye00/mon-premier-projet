@@ -37,7 +37,7 @@ const path = require("path"), fs = require("fs");
   for (let f = +a; f < +b; f++) {
     const times = [];
     const tf = f / FPS;
-    const fast3d = (tf > 4.2 && tf < 4.95) || (tf > 5.1 && tf < 5.6) || (tf > 8.98 && tf < 9.5);   // phone moves fast: full blur
+    const fast3d = (tf > 4.2 && tf < 4.95) || (tf > 5.1 && tf < 5.6) || (tf > 6.82 && tf < 7.55) || (tf > 8.98 && tf < 9.5);   // phone moves fast: full blur
     const slow3d = tf >= 4.95 && tf <= 8.98 && !fast3d;                                                // phone mostly still: 2 samples
     const n = SUB === 1 ? 1 : fast3d ? 6 : slow3d ? 2 : SUB;
     for (let s = 0; s < n; s++) times.push((f + (n === 1 ? 0 : (s / n - 0.5) * SHUTTER)) / FPS);
