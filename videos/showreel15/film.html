@@ -171,8 +171,10 @@ window.seek = async (t) => {
     const fade = io(prog(t, 11.95, 12.35));
     const kx = lerp(BAR_X0, BAR_X1, run);
     // track + fill
+    ctx.save(); ctx.globalAlpha = 1 - fade;
     rrect(BAR_X0 - 13, BAR_Y - 13, BAR_X1 - BAR_X0 + 26, 26, 13, mix(ACC, TRACK, toTrack));
-    if (toTrack > 0 && fade < 1) rrect(BAR_X0 - 13, BAR_Y - 13, (kx - BAR_X0 + 26) * (1 - fade), 26, 13, ACC);
+    if (toTrack > 0) rrect(BAR_X0 - 13, BAR_Y - 13, kx - BAR_X0 + 26, 26, 13, ACC);
+    ctx.restore();
     // easing curve, drawn as the knob runs (same cubic in-out)
     const bx0 = 190, bx1 = 890, by0 = CY - 30, by1 = CY - 560;
     const draw = run, undraw = fade;
@@ -210,7 +212,7 @@ window.seek = async (t) => {
     const go = sp(t, 12.05, S_TYPE);
     const arc = Math.sin(Math.PI * clamp(go)) * -220;
     dot(lerp(BAR_X1, px, go), lerp(BAR_Y, py, go) + arc, lerp(40, 19, go));
-    maskWord("motion designer", CX, CY + 300, 54, 500, MUTE, 13.25, null, t, { stagger: 0.02, track: 1 });
+    maskWord("motion designer", CX, CY + 300, 62, 500, MUTE, 13.25, null, t, { stagger: 0.02, track: 1 });
   }
   return true;
 };
