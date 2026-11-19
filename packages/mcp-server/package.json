@@ -1,0 +1,15 @@
+{
+  "name": "@amai/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "after-motion-mcp": "dist/index.js" },
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": {
+    "@amai/core": "0.1.0",
+    "@amai/bridge": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "ws": "8.18.0",
+    "zod": "3.25.76"
+  }
+}
