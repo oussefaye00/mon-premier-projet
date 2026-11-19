@@ -47,14 +47,21 @@ export function createMcpServer(dispatcher: Dispatcher): Server {
       return { content: [{ type: "text", text: JSON.stringify(dispatcher.status(), null, 2) }] };
     }
     const progressToken = req.params._meta?.progressToken;
+    // Les notifications de progression doivent toutes partir AVANT la réponse finale.
+    const sent: Promise<unknown>[] = [];
     const onProgress =
       progressToken !== undefined
-        ? (p: number, message?: string) =>
-            void extra
-              .sendNotification({ method: "notifications/progress", params: { progressToken, progress: Math.round(p * 1000) / 10, total: 100, message } })
-              .catch(() => {})
+        ? (p: number, message?: string) => {
+            sent.push(extra.sendNotification({ method: "notifications/progress", params: { progressToken, progress: Math.round(p * 1000) / 10, total: 100, message } }).catch(() => {}));
+          }
         : undefined;
     const { outcome, image } = await dispatcher.call(name, args as Record<string, unknown>, onProgress);
+    if (sent.length) {
+      await Promise.allSettled(sent);
+      // Certains clients traitent les notifications de façon asynchrone : si la réponse arrive
+      // dans le même bloc que la dernière notification, celle-ci peut être ignorée. On espace.
+      await new Promise((r) => setTimeout(r, 30));
+    }
     if (!outcome.ok) {
       return { isError: true, content: [{ type: "text", text: `Erreur (${outcome.error!.code}) : ${outcome.error!.message}` }] };
     }
