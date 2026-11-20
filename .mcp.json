@@ -2,7 +2,11 @@
   "mcpServers": {
     "rea": {
       "command": "npx",
-      "args": ["-y", "rea-agents@6.10.1", "mcp"]
+      "args": ["-y", "rea-agents@6.10.1", "mcp"],
+      "env": {
+        "GHIDRA_INSTALL_DIR": "/opt/ghidra_12.2_PUBLIC",
+        "JAVA_HOME": "/usr/lib/jvm/java-25-openjdk-amd64"
+      }
     }
   }
 }
